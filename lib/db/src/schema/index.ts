@@ -1,8 +1,10 @@
-import { pgTable, text, serial, integer, real, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod/v4";
+import { sql } from "drizzle-orm";
 
-export const agentsTable = pgTable("agents", {
+const now = sql`(strftime('%s', 'now'))`;
+
+export const agentsTable = sqliteTable("agents", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   nameAr: text("name_ar"),
@@ -11,8 +13,8 @@ export const agentsTable = pgTable("agents", {
   descriptionAr: text("description_ar"),
   status: text("status").notNull().default("online"),
   model: text("model").notNull(),
-  capabilities: jsonb("capabilities").notNull().default([]),
-  subagents: jsonb("subagents").notNull().default([]),
+  capabilities: text("capabilities", { mode: "json" }).notNull().default([]),
+  subagents: text("subagents", { mode: "json" }).notNull().default([]),
   executions_today: integer("executions_today").notNull().default(0),
   success_rate: real("success_rate").notNull().default(100),
   avg_response_ms: integer("avg_response_ms").notNull().default(1200),
@@ -20,10 +22,10 @@ export const agentsTable = pgTable("agents", {
   icon: text("icon").notNull(),
   color: text("color").notNull(),
   prompt: text("prompt"),
-  updated_at: timestamp("updated_at").defaultNow(),
+  updated_at: integer("updated_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
 });
 
-export const agentExecutionsTable = pgTable("agent_executions", {
+export const agentExecutionsTable = sqliteTable("agent_executions", {
   id: text("id").primaryKey(),
   agent_id: text("agent_id").notNull(),
   action: text("action").notNull(),
@@ -31,24 +33,24 @@ export const agentExecutionsTable = pgTable("agent_executions", {
   result: text("result"),
   error: text("error"),
   duration_ms: integer("duration_ms"),
-  created_at: timestamp("created_at").defaultNow(),
-  completed_at: timestamp("completed_at"),
+  created_at: integer("created_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
+  completed_at: integer("completed_at", { mode: "timestamp" }),
   tokens_used: integer("tokens_used"),
   model_used: text("model_used"),
 });
 
-export const systemAlertsTable = pgTable("system_alerts", {
+export const systemAlertsTable = sqliteTable("system_alerts", {
   id: text("id").primaryKey(),
   severity: text("severity").notNull(),
   agent_id: text("agent_id"),
   title: text("title").notNull(),
   message: text("message").notNull(),
-  resolved: boolean("resolved").notNull().default(false),
-  created_at: timestamp("created_at").defaultNow(),
-  resolved_at: timestamp("resolved_at"),
+  resolved: integer("resolved", { mode: "boolean" }).notNull().default(false),
+  created_at: integer("created_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
+  resolved_at: integer("resolved_at", { mode: "timestamp" }),
 });
 
-export const complaintsTable = pgTable("complaints", {
+export const complaintsTable = sqliteTable("complaints", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description").notNull(),
@@ -56,11 +58,11 @@ export const complaintsTable = pgTable("complaints", {
   severity: text("severity").notNull(),
   status: text("status").notNull().default("open"),
   billie_response: text("billie_response"),
-  created_at: timestamp("created_at").defaultNow(),
-  resolved_at: timestamp("resolved_at"),
+  created_at: integer("created_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
+  resolved_at: integer("resolved_at", { mode: "timestamp" }),
 });
 
-export const projectsTable = pgTable("projects", {
+export const projectsTable = sqliteTable("projects", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
   titleAr: text("title_ar"),
@@ -73,11 +75,11 @@ export const projectsTable = pgTable("projects", {
   duration_seconds: integer("duration_seconds").notNull().default(60),
   scenes_count: integer("scenes_count").notNull().default(0),
   assets_generated: integer("assets_generated").notNull().default(0),
-  created_at: timestamp("created_at").defaultNow(),
-  updated_at: timestamp("updated_at").defaultNow(),
+  created_at: integer("created_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
+  updated_at: integer("updated_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
 });
 
-export const generationJobsTable = pgTable("generation_jobs", {
+export const generationJobsTable = sqliteTable("generation_jobs", {
   id: text("id").primaryKey(),
   project_id: text("project_id").notNull(),
   phase: text("phase").notNull(),
@@ -85,31 +87,31 @@ export const generationJobsTable = pgTable("generation_jobs", {
   model_used: text("model_used").notNull(),
   estimated_seconds: integer("estimated_seconds").notNull().default(30),
   output_url: text("output_url"),
-  started_at: timestamp("started_at").defaultNow(),
-  completed_at: timestamp("completed_at"),
+  started_at: integer("started_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
+  completed_at: integer("completed_at", { mode: "timestamp" }),
 });
 
-export const conversationsTable = pgTable("conversations", {
+export const conversationsTable = sqliteTable("conversations", {
   id: text("id").primaryKey(),
   agent_id: text("agent_id").notNull(),
   agent_name: text("agent_name").notNull(),
   title: text("title").notNull(),
   message_count: integer("message_count").notNull().default(0),
-  last_message_at: timestamp("last_message_at"),
-  created_at: timestamp("created_at").defaultNow(),
+  last_message_at: integer("last_message_at", { mode: "timestamp" }),
+  created_at: integer("created_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
 });
 
-export const messagesTable = pgTable("messages", {
+export const messagesTable = sqliteTable("messages", {
   id: text("id").primaryKey(),
   conversation_id: text("conversation_id").notNull(),
   role: text("role").notNull(),
   content: text("content").notNull(),
   model_used: text("model_used"),
   tokens_used: integer("tokens_used"),
-  created_at: timestamp("created_at").defaultNow(),
+  created_at: integer("created_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
 });
 
-export const nexusTasksTable = pgTable("nexus_tasks", {
+export const nexusTasksTable = sqliteTable("nexus_tasks", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description"),
@@ -120,26 +122,26 @@ export const nexusTasksTable = pgTable("nexus_tasks", {
   risk_score: integer("risk_score").notNull().default(2),
   progress: integer("progress").notNull().default(0),
   result: text("result"),
-  created_at: timestamp("created_at").defaultNow(),
-  completed_at: timestamp("completed_at"),
+  created_at: integer("created_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
+  completed_at: integer("completed_at", { mode: "timestamp" }),
 });
 
-export const activityTable = pgTable("activity", {
+export const activityTable = sqliteTable("activity", {
   id: text("id").primaryKey(),
   type: text("type").notNull(),
   agent_id: text("agent_id"),
   agent_name: text("agent_name"),
   title: text("title").notNull(),
   description: text("description").notNull(),
-  created_at: timestamp("created_at").defaultNow(),
+  created_at: integer("created_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
 });
 
-export const systemSettingsTable = pgTable("system_settings", {
+export const systemSettingsTable = sqliteTable("system_settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
   category: text("category").notNull().default("general"),
   description: text("description"),
-  updated_at: timestamp("updated_at").defaultNow(),
+  updated_at: integer("updated_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
 });
 
 export const insertAgentSchema = createInsertSchema(agentsTable);

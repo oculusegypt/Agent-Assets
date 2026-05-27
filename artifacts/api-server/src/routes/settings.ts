@@ -191,15 +191,27 @@ router.get("/ai-models", async (_req, res) => {
   const { TASK_MODEL_CONFIG, AGENT_TASK_MAP, MODEL_INITIAL_QUOTAS } = await import("../lib/ai.js");
 
   // Aggregate token usage per model from agent_executions
-  const usageRows = await db.execute(
-    sql`SELECT model_used, SUM(tokens_used)::int AS total_tokens, COUNT(*)::int AS calls
-        FROM agent_executions
-        WHERE model_used IS NOT NULL AND tokens_used IS NOT NULL AND tokens_used > 0
-        GROUP BY model_used`
-  );
+  const { and, isNotNull, gt, groupBy } = await import("drizzle-orm");
+  const usageRows = await db
+    .select({
+      model_used: agentExecutionsTable.model_used,
+      total_tokens: sql<number>`sum(${agentExecutionsTable.tokens_used})`,
+      calls: sql<number>`count(*)`,
+    })
+    .from(agentExecutionsTable)
+    .where(
+      and(
+        isNotNull(agentExecutionsTable.model_used),
+        isNotNull(agentExecutionsTable.tokens_used),
+        gt(agentExecutionsTable.tokens_used, 0),
+      ),
+    )
+    .groupBy(agentExecutionsTable.model_used);
   const usageByModel: Record<string, { tokens: number; calls: number }> = {};
-  for (const row of usageRows.rows as any[]) {
-    usageByModel[row.model_used] = { tokens: Number(row.total_tokens || 0), calls: Number(row.calls || 0) };
+  for (const row of usageRows) {
+    if (row.model_used) {
+      usageByModel[row.model_used] = { tokens: Number(row.total_tokens || 0), calls: Number(row.calls || 0) };
+    }
   }
 
   // Build model stats list

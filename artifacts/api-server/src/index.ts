@@ -24,4 +24,15 @@ server.listen(port, (err?: Error) => {
     process.exit(1);
   }
   logger.info({ port }, "Server listening");
+
+  // Auto-seed agents and default settings on every startup
+  setImmediate(async () => {
+    try {
+      await fetch(`http://localhost:${port}/api/system/seed-agents`, { method: "POST" });
+      await fetch(`http://localhost:${port}/api/settings`, { method: "GET" }); // triggers ensureDefaults
+      logger.info("Auto-seed completed: agents + settings");
+    } catch (e: any) {
+      logger.warn({ err: e?.message }, "Auto-seed warning (non-fatal)");
+    }
+  });
 });
