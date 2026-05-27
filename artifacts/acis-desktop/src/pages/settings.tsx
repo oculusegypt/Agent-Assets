@@ -12,6 +12,7 @@ import {
   AlertTriangle, Zap, Eye, EyeOff, TestTube2, Info,
   RotateCcw, Shield, Activity, MessageSquare, Building2,
   ChevronDown, ChevronUp, Loader2, Circle, X, Key,
+  BarChart3, Sparkles, Code2, Languages, Lightbulb, Volume2,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -22,6 +23,7 @@ type DbTable = { name: string; nameAr: string; count: number; icon: string };
 
 const TABS = [
   { id: "api-keys",     label: "مفاتيح API",         icon: Key,          color: "text-yellow-400" },
+  { id: "models",       label: "النماذج",             icon: BarChart3,    color: "text-emerald-400" },
   { id: "ai",           label: "الذكاء الاصطناعي", icon: BrainCircuit, color: "text-primary" },
   { id: "agents",       label: "الوكلاء",           icon: Bot,          color: "text-purple-400" },
   { id: "system",       label: "النظام",             icon: Cpu,          color: "text-amber-400" },
@@ -63,6 +65,15 @@ export default function SettingsPage() {
   const [keySaving, setKeySaving] = useState(false);
   const [keyMsg, setKeyMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
+  type ModelStat = {
+    id: string; provider: "qwen" | "gemini"; nameAr: string; category: string;
+    quota: number; used: number; remaining: number; pctUsed: number;
+    calls: number; tasks: string[]; agents: string[]; isPrimary: boolean;
+  };
+  const [modelStats, setModelStats] = useState<ModelStat[]>([]);
+  const [modelLoading, setModelLoading] = useState(false);
+  const [seedingDashScope, setSeedingDashScope] = useState(false);
+
   const { data: agents, refetch: refetchAgents } = useListAgents();
   const qc = useQueryClient();
 
@@ -83,6 +94,27 @@ export default function SettingsPage() {
     const d = await r.json();
     setKeyStatus(d);
   }, []);
+
+  const loadModels = useCallback(async () => {
+    setModelLoading(true);
+    try {
+      const r = await fetch(`${BASE}/api/settings/ai-models`);
+      const d = await r.json();
+      setModelStats(d.models || []);
+    } finally {
+      setModelLoading(false);
+    }
+  }, []);
+
+  const seedDashScope = async () => {
+    setSeedingDashScope(true);
+    try {
+      await fetch(`${BASE}/api/settings/ai-models/seed-quotas`, { method: "POST" });
+      await loadModels();
+    } finally {
+      setSeedingDashScope(false);
+    }
+  };
 
   const saveApiKeys = async () => {
     setKeySaving(true);
@@ -117,6 +149,7 @@ export default function SettingsPage() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (tab === "database") loadDb(); }, [tab, loadDb]);
   useEffect(() => { if (tab === "api-keys") loadKeyStatus(); }, [tab, loadKeyStatus]);
+  useEffect(() => { if (tab === "models") loadModels(); }, [tab, loadModels]);
 
   const getSetting = (key: string) =>
     changed[key] !== undefined ? changed[key] : (settings.find(s => s.key === key)?.value ?? "");
@@ -241,16 +274,21 @@ export default function SettingsPage() {
       {/* ── API Keys Tab ── */}
       {tab === "api-keys" && (
         <div className="space-y-5">
-          {/* Smart Routing Info */}
-          <div className="p-4 rounded border border-primary/20 bg-primary/5 text-sm space-y-2">
-            <div className="flex items-center gap-2 font-semibold text-primary">
-              <Zap size={15} /> نظام الاختيار الذكي للنماذج
+          {/* Smart Routing Info — Qwen First */}
+          <div className="p-4 rounded border border-orange-500/20 bg-orange-500/5 text-sm space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-semibold text-orange-400">
+                <Zap size={15} /> استراتيجية النماذج — Qwen أساسي · Gemini للصوت فقط
+              </div>
+              <span className="text-[10px] font-mono bg-orange-500/10 border border-orange-500/20 text-orange-300 px-2 py-0.5 rounded">Qwen-First Strategy v2</span>
             </div>
-            <div className="text-muted-foreground text-xs space-y-1">
-              <p>• <span className="text-foreground font-medium">المهام الإبداعية المعقدة</span> (القصة، الإخراج، النقد، بيليه): <span className="font-mono text-primary">gemini-2.5-pro → qwen-max</span></p>
-              <p>• <span className="text-foreground font-medium">المهام السريعة والمراقبة</span> (NEXUS، CAEOS، التجميع): <span className="font-mono text-primary">gemini-2.5-flash → qwen-plus</span></p>
-              <p>• <span className="text-foreground font-medium">المحتوى العربي</span> (flash tier): <span className="font-mono text-primary">qwen-plus أولاً → gemini-2.5-flash احتياطي</span></p>
-              <p>• <span className="text-foreground font-medium">عند فشل أي نموذج</span>: التبديل التلقائي للنموذج الآخر</p>
+            <div className="text-muted-foreground text-xs space-y-1.5">
+              <p>• <span className="text-orange-300 font-medium">النص المعقد + الإبداعي</span> (بيليه، القصة، الإخراج، التنسيق): <span className="font-mono text-orange-400">qwen3-max-2026-01-23</span></p>
+              <p>• <span className="text-orange-300 font-medium">البرمجة وهندسة البرومبت</span>: <span className="font-mono text-orange-400">qwen3-coder-480b-a35b-instruct</span></p>
+              <p>• <span className="text-orange-300 font-medium">التدقيق والاستدلال العميق</span> (مدقق الصدق، الناقد، CAEOS): <span className="font-mono text-orange-400">qwq-plus</span></p>
+              <p>• <span className="text-orange-300 font-medium">الرؤية البصرية</span> (اللوحة المصورة): <span className="font-mono text-orange-400">qwen3-vl-235b-a22b-instruct</span></p>
+              <p>• <span className="text-orange-300 font-medium">الترجمة</span>: <span className="font-mono text-orange-400">qwen-mt-plus</span> · <span className="text-muted-foreground font-medium">الصوت العربي حصرياً →</span> <span className="font-mono text-primary">gemini-2.5-flash-preview-tts</span></p>
+              <p className="text-primary/70">↳ Gemini كاحتياط أخير عند فشل Qwen — يُحافظ على رصيد Gemini</p>
             </div>
           </div>
 
@@ -368,17 +406,21 @@ export default function SettingsPage() {
             </Button>
           </SectionCard>
 
-          {/* Agent Model Map */}
-          <SectionCard icon={<Bot size={16} className="text-purple-400" />} title="خريطة النماذج لكل وكيل">
+          {/* Agent → Model Map */}
+          <SectionCard icon={<Bot size={16} className="text-purple-400" />} title="خريطة الوكلاء ← النماذج (Qwen أساسي)">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
               {[
-                { agents: ["بيليه", "معمار القصة", "وكيل المخرج", "المخرج السينمائي التقني", "السرد العاطفي", "الناقد الفني", "مصمم اللوحة", "مخرج البرومبت", "منسق النماذج", "StoryboardToVision"], tier: "pro", primary: "gemini-2.5-pro", fallback: "qwen-max", color: "border-primary/30 bg-primary/5 text-primary" },
-                { agents: ["مدقق الصدق", "CAEOS", "NEXUS", "التصيير", "التجميع", "ما بعد الإنتاج", "تحليل المشاهد", "الصوت والموسيقى", "ACIS Master"], tier: "flash", primary: "gemini-2.5-flash", fallback: "qwen-plus", color: "border-emerald-500/30 bg-emerald-500/5 text-emerald-400" },
+                { label: "نص معقد + إبداعي + تنسيق", model: "qwen3-max-2026-01-23", agents: ["بيليه", "معمار القصة", "المخرج", "المخرج التقني", "السرد العاطفي", "ACIS Master", "StoryboardToVision", "NEXUS Master", "الصوت والموسيقى", "ما بعد الإنتاج", "تحليل المشاهد"], color: "border-orange-500/30 bg-orange-500/5 text-orange-400" },
+                { label: "استدلال + تدقيق + أخلاقيات", model: "qwq-plus", agents: ["مدقق الصدق", "الناقد الفني", "CAEOS Master"], color: "border-violet-500/30 bg-violet-500/5 text-violet-400" },
+                { label: "برمجة + هندسة البرومبت", model: "qwen3-coder-480b", agents: ["مخرج البرومبت", "منسق النماذج"], color: "border-sky-500/30 bg-sky-500/5 text-sky-400" },
+                { label: "رؤية بصرية + اللوحة المصورة", model: "qwen3-vl-235b", agents: ["مصمم اللوحة المصورة"], color: "border-pink-500/30 bg-pink-500/5 text-pink-400" },
+                { label: "مهام سريعة + مراقبة", model: "qwen3.5-flash", agents: ["وحدات التصيير", "منسق الجدول الزمني"], color: "border-emerald-500/30 bg-emerald-500/5 text-emerald-400" },
+                { label: "صوت عربي (Gemini حصرياً)", model: "gemini-2.5-flash-preview-tts", agents: ["TTS · التعليق الصوتي العربي"], color: "border-primary/30 bg-primary/5 text-primary" },
               ].map(g => (
-                <div key={g.tier} className={`p-3 rounded border ${g.color} space-y-2`}>
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold capitalize">{g.tier === "pro" ? "⚡ Pro Tier" : "🚀 Flash Tier"}</span>
-                    <span className="font-mono text-[10px] opacity-70">{g.primary} → {g.fallback}</span>
+                <div key={g.model} className={`p-3 rounded border ${g.color} space-y-2`}>
+                  <div>
+                    <div className="font-semibold text-[11px] mb-1">{g.label}</div>
+                    <div className="font-mono text-[10px] opacity-80">{g.model}</div>
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {g.agents.map(a => (
@@ -389,6 +431,126 @@ export default function SettingsPage() {
               ))}
             </div>
           </SectionCard>
+        </div>
+      )}
+
+      {/* ── Models Tab ── */}
+      {tab === "models" && (
+        <div className="space-y-5">
+          {/* Header Banner */}
+          <div className="p-4 rounded border border-orange-500/20 bg-orange-500/5 flex items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 font-semibold text-orange-400 mb-1">
+                <BarChart3 size={16} /> رصيد النماذج — Alibaba Qwen (أساسي) + Google Gemini (صوت فقط)
+              </div>
+              <p className="text-xs text-muted-foreground">
+                الرصيد المعروض مبني على الاستهلاك المسجّل في قاعدة البيانات. الأرقام الأولية من تقرير الرصيد الأصلي.
+              </p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Button size="sm" variant="outline" onClick={loadModels} disabled={modelLoading} className="gap-1.5 text-xs">
+                {modelLoading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                تحديث
+              </Button>
+              <Button size="sm" onClick={seedDashScope} disabled={seedingDashScope} className="gap-1.5 text-xs bg-orange-500 hover:bg-orange-600 text-white">
+                {seedingDashScope ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                تفعيل DashScope
+              </Button>
+            </div>
+          </div>
+
+          {modelLoading ? (
+            <div className="flex items-center justify-center py-16 text-muted-foreground gap-3">
+              <Loader2 size={20} className="animate-spin" /> جاري تحميل إحصائيات النماذج...
+            </div>
+          ) : modelStats.length === 0 ? (
+            <div className="text-center py-16 text-muted-foreground">
+              <BarChart3 size={32} className="mx-auto mb-3 opacity-30" />
+              <p>لا توجد بيانات — اضغط تحديث للتحميل</p>
+            </div>
+          ) : (
+            <>
+              {/* Summary Cards */}
+              {(() => {
+                const primaryModels = modelStats.filter(m => m.isPrimary);
+                const qwenModels = primaryModels.filter(m => m.provider === "qwen");
+                const geminiModels = primaryModels.filter(m => m.provider === "gemini");
+                const totalQwenQuota = qwenModels.reduce((s, m) => s + m.quota, 0);
+                const totalQwenUsed = qwenModels.reduce((s, m) => s + m.used, 0);
+                const totalCalls = modelStats.reduce((s, m) => s + m.calls, 0);
+                return (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[
+                      { label: "نماذج Qwen النشطة", value: qwenModels.length, sub: "نموذج أساسي", color: "text-orange-400 border-orange-500/20 bg-orange-500/5" },
+                      { label: "إجمالي رصيد Qwen", value: (totalQwenQuota / 1_000_000).toFixed(1) + "M", sub: "رمز متاح", color: "text-emerald-400 border-emerald-500/20 bg-emerald-500/5" },
+                      { label: "رموز مستهلكة", value: totalQwenUsed.toLocaleString("ar"), sub: "من جميع النماذج", color: "text-amber-400 border-amber-500/20 bg-amber-500/5" },
+                      { label: "إجمالي الاستدعاءات", value: totalCalls.toLocaleString("ar"), sub: "مكالمة API", color: "text-primary border-primary/20 bg-primary/5" },
+                    ].map(c => (
+                      <div key={c.label} className={`p-3 rounded border ${c.color} text-center space-y-1`}>
+                        <div className={`text-2xl font-bold font-mono ${c.color.split(" ")[0]}`}>{c.value}</div>
+                        <div className="text-[10px] text-muted-foreground">{c.sub}</div>
+                        <div className="text-[10px] font-medium">{c.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* Qwen Primary Models */}
+              {(() => {
+                const groups: Record<string, typeof modelStats> = {};
+                for (const m of modelStats.filter(m => m.provider === "qwen")) {
+                  if (!groups[m.category]) groups[m.category] = [];
+                  groups[m.category].push(m);
+                }
+                const catIcons: Record<string, React.ReactNode> = {
+                  "نص سريع":   <Zap size={13} className="text-emerald-400" />,
+                  "نص متقدم":  <Sparkles size={13} className="text-orange-400" />,
+                  "إبداعي":    <Sparkles size={13} className="text-orange-400" />,
+                  "برمجة":     <Code2 size={13} className="text-sky-400" />,
+                  "برمجة سريع": <Code2 size={13} className="text-sky-400" />,
+                  "رؤية":      <Activity size={13} className="text-pink-400" />,
+                  "ترجمة":     <Languages size={13} className="text-violet-400" />,
+                  "استدلال":   <Lightbulb size={13} className="text-amber-400" />,
+                  "تنسيق":     <Cpu size={13} className="text-orange-400" />,
+                };
+                return (
+                  <SectionCard icon={<span className="text-orange-400 font-bold text-sm">Q</span>} title="نماذج Qwen / Alibaba — الأساسي لكل المهام">
+                    <div className="space-y-3">
+                      {Object.entries(groups).map(([cat, models]) => (
+                        <div key={cat}>
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground mb-2">
+                            {catIcons[cat] ?? <Circle size={10} />}
+                            {cat}
+                          </div>
+                          <div className="space-y-2">
+                            {models.sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary)).map(m => (
+                              <ModelBar key={m.id} model={m} />
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </SectionCard>
+                );
+              })()}
+
+              {/* Gemini Models */}
+              {modelStats.filter(m => m.provider === "gemini").length > 0 && (
+                <SectionCard icon={<Volume2 size={16} className="text-primary" />} title="نماذج Gemini — للصوت العربي + الاحتياط">
+                  <div className="space-y-2">
+                    <div className="p-2 rounded bg-primary/5 border border-primary/10 text-xs text-primary/80 flex items-center gap-2">
+                      <Info size={12} />
+                      Gemini محجوز لـ TTS العربي (الجودة الأفضل) + احتياط أخير عند فشل Qwen كلياً
+                    </div>
+                    {modelStats.filter(m => m.provider === "gemini").map(m => (
+                      <ModelBar key={m.id} model={m} />
+                    ))}
+                  </div>
+                </SectionCard>
+              )}
+            </>
+          )}
         </div>
       )}
 
@@ -898,6 +1060,63 @@ function SectionCard({ icon, title, children }: { icon: React.ReactNode; title: 
         <span className="font-semibold text-sm">{title}</span>
       </div>
       <div className="p-4 space-y-4">{children}</div>
+    </div>
+  );
+}
+
+type ModelStatItem = {
+  id: string; provider: "qwen" | "gemini"; nameAr: string; category: string;
+  quota: number; used: number; remaining: number; pctUsed: number;
+  calls: number; tasks: string[]; agents: string[]; isPrimary: boolean;
+};
+
+function ModelBar({ model: m }: { model: ModelStatItem }) {
+  const pct = m.pctUsed;
+  const barColor = pct >= 80 ? "bg-red-500" : pct >= 40 ? "bg-amber-500" : "bg-emerald-500";
+  const textColor = pct >= 80 ? "text-red-400" : pct >= 40 ? "text-amber-400" : "text-emerald-400";
+  const remainingM = m.remaining >= 1_000_000 ? (m.remaining / 1_000_000).toFixed(2) + "M" :
+    m.remaining >= 1_000 ? (m.remaining / 1_000).toFixed(0) + "K" : m.remaining.toString();
+  const quotaM = m.quota >= 1_000_000 ? (m.quota / 1_000_000).toFixed(1) + "M" :
+    m.quota >= 1_000 ? (m.quota / 1_000).toFixed(0) + "K" : m.quota.toString();
+
+  return (
+    <div className="p-3 rounded border border-border/40 bg-secondary/10 space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-mono text-xs font-semibold text-foreground truncate">{m.id}</span>
+            {m.isPrimary && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/25 text-orange-400 shrink-0">أساسي</span>
+            )}
+            {m.provider === "gemini" && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-primary shrink-0">Gemini</span>
+            )}
+          </div>
+          {m.agents.length > 0 && (
+            <div className="text-[10px] text-muted-foreground mt-0.5 truncate">
+              {m.agents.slice(0, 4).join(" · ")}{m.agents.length > 4 ? ` +${m.agents.length - 4}` : ""}
+            </div>
+          )}
+        </div>
+        <div className="text-right shrink-0">
+          <div className={`text-sm font-mono font-bold ${textColor}`}>{remainingM}</div>
+          <div className="text-[10px] text-muted-foreground">/ {quotaM}</div>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="space-y-1">
+        <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all ${barColor}`}
+            style={{ width: `${Math.min(100, pct)}%` }}
+          />
+        </div>
+        <div className="flex items-center justify-between text-[10px] font-mono text-muted-foreground">
+          <span className={pct > 0 ? textColor : ""}>{pct.toFixed(1)}% مُستهلك</span>
+          <span>{m.calls > 0 ? `${m.calls.toLocaleString("ar")} استدعاء · ${m.used.toLocaleString("ar")} رمز` : "لم يُستخدم بعد"}</span>
+        </div>
+      </div>
     </div>
   );
 }

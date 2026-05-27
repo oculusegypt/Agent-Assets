@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { agentsTable, systemAlertsTable, complaintsTable, activityTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { callAI, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
+import { callAIForTask, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
 import { broadcast } from "../lib/ws.js";
 
 const router = Router();
@@ -77,12 +77,11 @@ router.post("/chat", async (req, res) => {
 ${systemContext}`;
 
   try {
-    const { callAIWithHistory } = await import("../lib/ai.js");
     const msgs = history.slice(-6).map((h: any) => ({
       role: (h.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
       content: h.text || h.content || "",
     }));
-    const result = await callAIWithHistory(billiePrompt, msgs, message, "flash");
+    const result = await callAIForTask("text_complex", billiePrompt, message, { history: msgs });
 
     await db.insert(activityTable).values({
       id: randomUUID(), type: "billie_alert",

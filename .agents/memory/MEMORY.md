@@ -1,1 +1,3 @@
 - [Gemini model selection](gemini-model.md) — free tier key: use gemini-2.5-flash-lite (works), not 2.5-flash (20 RPD) or 2.5-pro (404)
+- [Qwen-First AI Routing](qwen-routing.md) — كل المهام تحاول Qwen أولاً ثم Gemini احتياط؛ TTS عربي Gemini حصرياً.
+- [Alibaba Key vs DashScope](alibaba-key.md) — المفتاح المخزَّن في DB هو مفتاح MaaS لا يعمل مع DashScope القياسي (401).

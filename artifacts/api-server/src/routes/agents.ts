@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { agentsTable, agentExecutionsTable, activityTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { callAI, getAgentSystemPrompt, getAgentTier, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
+import { callAIForAgent, getAgentSystemPrompt, AGENT_TASK_MAP, TASK_MODEL_CONFIG } from "../lib/ai.js";
 import { broadcast } from "../lib/ws.js";
 
 const router = Router();
@@ -51,8 +51,7 @@ router.post("/:agentId/execute", async (req, res) => {
       ? `المهمة: ${action}\n\nالتفاصيل: ${prompt}`
       : `نفّذ المهمة التالية بدقة واحترافية عالية: ${action}`;
 
-    const tier = getAgentTier(agentId);
-    const aiRes = await callAI(systemPrompt, userMessage, tier);
+    const aiRes = await callAIForAgent(agentId, systemPrompt, userMessage);
     const result = aiRes.text;
     const tokenCount = aiRes.tokens;
     const modelUsed = aiRes.model;
