@@ -865,7 +865,7 @@ router.post("/code-agent/stream", async (req, res) => {
   try {
     // ── مرحلة 1: تخطيط ──
     emit({ type: "status", message: "أُحلّل المهمة وأحدد الملفات المطلوبة…" });
-    const planRaw = await callAIForTask("text_fast", CODE_AGENT_SYSTEM, CODE_PLAN_PROMPT(task.trim()));
+    const planRaw = await callAIForTask("code_fast", CODE_AGENT_SYSTEM, CODE_PLAN_PROMPT(task.trim()));
     let plan: { plan: string; files_to_read: string[]; scope: string };
     try {
       const cleaned = planRaw.text.replace(/```json\n?|```\n?/g, "").trim();
@@ -890,7 +890,7 @@ router.post("/code-agent/stream", async (req, res) => {
 
     // ── مرحلة 3: توليد الكود ──
     emit({ type: "status", message: "أُولّد الكود والتعديلات…" });
-    const codeRaw = await callAIForTask("text_complex", CODE_AGENT_SYSTEM, CODE_GENERATE_PROMPT(task.trim(), fileContents));
+    const codeRaw = await callAIForTask("code", CODE_AGENT_SYSTEM, CODE_GENERATE_PROMPT(task.trim(), fileContents));
     let ops: { summary: string; operations: Array<{ type: string; path: string; content: string; is_new: boolean; reason: string }> };
     try {
       const cleaned = codeRaw.text.replace(/```json\n?|```\n?/g, "").trim();

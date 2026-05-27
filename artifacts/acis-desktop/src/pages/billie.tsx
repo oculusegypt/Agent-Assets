@@ -109,7 +109,8 @@ function detectImageIntent(text: string): boolean {
 }
 function detectAudioIntent(text: string): boolean {
   return /(?:ولّد|ولد|اقرأ|اسمعني|اعطيني|أريد|نطّق|تكلّم|اقرأ\s*لي)\s*(?:لي\s*)?(?:صوت|مقطع\s*صوت|تسجيل|الصوت|صوتياً)/i.test(text) ||
-    /(?:read|speak|voice|tts|say\s*this|generate\s*audio|narrate)/i.test(text);
+    /(?:ولّد|ولد|أنشئ|اصنع|اعمل|أنتج)\s*(?:لي\s*)?(?:موسيقى|موسيقا|مقطع\s*موسيق|لحن|نغمة|أغنية|تسجيل\s*صوتي|مؤثر\s*صوتي)/i.test(text) ||
+    /(?:read|speak|voice|tts|say\s*this|generate\s*audio|narrate|music|soundtrack|bgm|sound\s*effect)/i.test(text);
 }
 function buildSuggestions(text: string): string[] {
   const chips: string[] = [];
