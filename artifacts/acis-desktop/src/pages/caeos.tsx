@@ -267,17 +267,53 @@ ${ethicsInput}
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm" dir="rtl">
           <div className="bg-card border border-orange-500/30 rounded-lg w-full max-w-3xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-border/50">
-              <button onClick={() => setShowEthicsModal(false)} className="p-1 hover:bg-secondary rounded">
-                <X size={16} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setShowEthicsModal(false)} className="p-1 hover:bg-secondary rounded">
+                  <X size={16} />
+                </button>
+                <button
+                  onClick={() => navigator.clipboard?.writeText(ethicsResult)}
+                  className="text-[10px] font-mono text-muted-foreground hover:text-orange-400 px-2 py-1 rounded border border-border/30 hover:border-orange-500/30 transition-colors">
+                  نسخ النتيجة
+                </button>
+              </div>
               <div className="text-right">
-                <h3 className="font-bold">نتيجة التحليل الأخلاقي CAEOS</h3>
+                <h3 className="font-bold flex items-center gap-2 justify-end">
+                  <span>نتيجة التحليل الأخلاقي CAEOS</span>
+                  <Shield size={16} className="text-orange-400" />
+                </h3>
                 <p className="text-xs text-muted-foreground font-mono">عبر 15 طبقة سيادية دستورية</p>
+              </div>
+            </div>
+            {/* Mini layer scores header */}
+            <div className="px-4 py-2 border-b border-border/30 bg-secondary/20 overflow-x-auto">
+              <div className="flex items-center gap-1.5 min-w-max">
+                {SOVEREIGN_LAYERS.slice(0, 8).map(l => {
+                  const Icon = l.icon;
+                  return (
+                    <div key={l.id} className="flex items-center gap-1 px-2 py-0.5 rounded border border-orange-500/20 bg-orange-500/5 text-[9px] font-mono whitespace-nowrap">
+                      <Icon size={8} className={l.color} />
+                      <span className="text-muted-foreground">L{l.id}</span>
+                      <span className={`${l.color} font-bold`}>✓</span>
+                    </div>
+                  );
+                })}
+                <span className="text-[9px] font-mono text-muted-foreground/50 px-1">+7 طبقات</span>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
               <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90" dir="rtl">
                 {ethicsResult}
+              </div>
+            </div>
+            <div className="flex items-center justify-between px-4 py-3 border-t border-border/30 bg-secondary/10">
+              <button onClick={() => setShowEthicsModal(false)}
+                className="text-xs font-mono text-muted-foreground hover:text-foreground px-3 py-1 rounded border border-border/40 hover:border-border transition-colors">
+                إغلاق
+              </button>
+              <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground">
+                <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                CAEOS · 15 طبقة سيادية · نظام الذكاء الاصطناعي الدستوري
               </div>
             </div>
           </div>

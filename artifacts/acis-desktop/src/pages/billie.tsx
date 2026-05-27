@@ -118,8 +118,8 @@ export default function BilliePage() {
   const sendChat = useCallback(async (text: string) => {
     if (!text.trim() || chatLoading) return;
     const userMsg: ChatMsg = { role: "user", text: text.trim(), ts: new Date().toISOString() };
-    const loadingMsg: ChatMsg = { role: "billie", text: "", ts: new Date().toISOString(), loading: true };
-    setChatHistory(h => [...h, userMsg, loadingMsg]);
+    const streamingMsg: ChatMsg = { role: "billie", text: "", ts: new Date().toISOString(), loading: true };
+    setChatHistory(h => [...h, userMsg, streamingMsg]);
     setChatInput("");
     setChatLoading(true);
 
@@ -129,27 +129,70 @@ export default function BilliePage() {
       .map(m => ({ role: m.role === "user" ? "user" : "model", text: m.text }));
 
     try {
-      const r = await fetch(`${BASE}/api/billie/chat`, {
+      const r = await fetch(`${BASE}/api/billie/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text.trim(), history: historyPayload }),
       });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error || "فشل الاتصال");
-      const billieMsg: ChatMsg = {
-        role: "billie",
-        text: data.reply,
-        model: data.model,
-        ts: data.timestamp || new Date().toISOString(),
-      };
-      setChatHistory(h => [...h.slice(0, -1), billieMsg]);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+
+      const reader = r.body?.getReader();
+      if (!reader) throw new Error("لا يوجد stream");
+      const dec = new TextDecoder();
+      let buf = "";
+      let finalModel = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const ev = JSON.parse(line.slice(6));
+            if (ev.type === "chunk") {
+              setChatHistory(h => {
+                const copy = [...h];
+                copy[copy.length - 1] = { ...copy[copy.length - 1], text: ev.text, loading: false };
+                return copy;
+              });
+            } else if (ev.type === "done") {
+              finalModel = ev.model;
+              setChatHistory(h => {
+                const copy = [...h];
+                copy[copy.length - 1] = { role: "billie", text: ev.text, model: ev.model, ts: ev.timestamp || new Date().toISOString() };
+                return copy;
+              });
+            } else if (ev.type === "error") {
+              throw new Error(ev.message);
+            }
+          } catch { /* skip malformed */ }
+        }
+      }
     } catch (err: any) {
-      const errMsg: ChatMsg = {
-        role: "billie",
-        text: `⚠️ تعذّر الاتصال ببيليه: ${err?.message || "خطأ غير معروف"} — تحقق من مفاتيح API في الإعدادات.`,
-        ts: new Date().toISOString(),
-      };
-      setChatHistory(h => [...h.slice(0, -1), errMsg]);
+      // Fallback to non-streaming chat
+      try {
+        const r2 = await fetch(`${BASE}/api/billie/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text.trim(), history: historyPayload }),
+        });
+        const data = await r2.json();
+        if (!r2.ok) throw new Error(data.error || "فشل الاتصال");
+        setChatHistory(h => {
+          const copy = [...h];
+          copy[copy.length - 1] = { role: "billie", text: data.reply, model: data.model, ts: data.timestamp || new Date().toISOString() };
+          return copy;
+        });
+      } catch (err2: any) {
+        setChatHistory(h => {
+          const copy = [...h];
+          copy[copy.length - 1] = { role: "billie", text: `⚠️ تعذّر الاتصال: ${err2?.message || "خطأ غير معروف"} — تحقق من مفاتيح API.`, ts: new Date().toISOString() };
+          return copy;
+        });
+      }
     }
     setChatLoading(false);
   }, [chatHistory, chatLoading]);

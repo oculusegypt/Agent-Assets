@@ -234,7 +234,16 @@ export default function NexusPage() {
                       <span>{task.assigned_agent} · {TASK_TYPE_AR[task.type] || task.type}</span>
                     </div>
                     {task.status === "completed" && (
-                      <div className="mt-2 text-xs text-emerald-400 font-mono">اضغط لعرض النتيجة ←</div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <div className="text-xs text-emerald-400 font-mono">اضغط لعرض النتيجة ←</div>
+                        {task.result && (
+                          <button
+                            onClick={e => { e.stopPropagation(); navigator.clipboard?.writeText(task.result!); }}
+                            className="text-[10px] font-mono text-muted-foreground hover:text-emerald-400 px-1.5 py-0.5 rounded border border-border/30 hover:border-emerald-500/30 transition-colors">
+                            نسخ
+                          </button>
+                        )}
+                      </div>
                     )}
                   </button>
                 </div>

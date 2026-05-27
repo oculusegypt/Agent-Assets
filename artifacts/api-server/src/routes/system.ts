@@ -4,7 +4,7 @@ import { agentsTable, agentExecutionsTable, projectsTable, activityTable, system
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { broadcast } from "../lib/ws.js";
-import { callAI, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
+import { callAIForTask } from "../lib/ai.js";
 
 const SERVER_START = Date.now();
 
@@ -134,11 +134,11 @@ router.post("/health-check", async (_req, res) => {
 
   if (healthScore < 60) {
     try {
-      const aiAlert = await callAI(
-        AGENT_SYSTEM_PROMPTS["billie"],
+      const aiAlert = await callAIForTask(
+        "text_complex",
+        "أنتِ بيليه، المشرفة العليا على نظام ACIS. أنتِ خبيرة في رصد صحة الأنظمة وإصدار التحذيرات.",
         `النظام بصحة ${Math.round(healthScore)}% فقط. الوكلاء غير المتصلين: ${offline.map(a => a.nameAr || a.name).join("، ")}.
-اكتب تنبيهاً عاجلاً موجزاً (جملتان) يوضح الخطر ويوصي بإجراء فوري.`,
-        "flash"
+اكتبي تنبيهاً عاجلاً موجزاً (جملتان) يوضح الخطر ويوصي بإجراء فوري.`
       );
       const alertId = randomUUID();
       await db.insert(systemAlertsTable).values({

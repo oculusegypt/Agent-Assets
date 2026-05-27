@@ -160,7 +160,7 @@ router.post("/pipeline-stream", async (req, res) => {
         contextParts.push(`\n\n=== مهمتك (الوكيل ${i + 1} من ${agent_ids.length}) ===\nبناءً على كل ما سبق، قم بدورك التكاملي في هذا المشروع المشترك. مخرجاتك ستُمرَّر للوكيل التالي.`);
       }
 
-      const aiRes = await callAI(systemPrompt, contextParts.join(""), i <= 1 ? "pro" : "flash");
+      const aiRes = await callAIForAgent(agentId, systemPrompt, contextParts.join(""));
       const stepDuration = Date.now() - stepStart;
       totalTokens += aiRes.tokens;
 
@@ -233,7 +233,7 @@ router.post("/pipeline", async (req, res) => {
         ? `المهمة الأصلية:\n${currentInput}`
         : `المهمة الأصلية:\n${input}\n\n=== مخرجات المرحلة السابقة (${steps[i - 1]?.agent_name}) ===\n${steps[i - 1]?.result}\n\n=== مهمتك الآن ===\nبناءً على ما سبق، قم بدورك في خط الإنتاج:`;
 
-      const aiRes = await callAI(systemPrompt, contextMessage, "flash");
+      const aiRes = await callAIForAgent(agentId, systemPrompt, contextMessage);
       const stepDuration = Date.now() - stepStart;
       totalTokens += aiRes.tokens;
 
@@ -294,7 +294,7 @@ router.post("/batch", async (req, res) => {
       const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId));
       if (!agent) return { agent_id: agentId, error: "غير موجود" };
       const systemPrompt = getAgentSystemPrompt(agentId, agent.nameAr || agent.name);
-      const aiRes = await callAI(systemPrompt, input, "flash");
+      const aiRes = await callAIForAgent(agentId, systemPrompt, input);
       return { agent_id: agentId, agent_name: agent.nameAr || agent.name, result: aiRes.text, tokens: aiRes.tokens, model: aiRes.model };
     })
   );

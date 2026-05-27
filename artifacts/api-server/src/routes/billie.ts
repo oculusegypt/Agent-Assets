@@ -104,17 +104,75 @@ ${systemContext}`;
 router.post("/news/analyze", async (req, res) => {
   const { topic } = req.body;
   try {
-    const r = await callAI(
+    const r = await callAIForTask(
+      "text_complex",
       AGENT_SYSTEM_PROMPTS["billie"],
       `حلّل أهمية أحدث التطورات في مجال الذكاء الاصطناعي لعام 2026 على نظام ACIS متعدد الوكلاء.
 ${topic ? `ركّز على موضوع: ${topic}` : ""}
-قدّم: أهم 3 تطورات، تأثيرها على النظام، وتوصيات للاستفادة منها.`,
-      "flash"
+قدّم: أهم 3 تطورات، تأثيرها على النظام، وتوصيات للاستفادة منها.`
     );
     res.json({ analysis: r.text, model: r.model, generated_at: new Date().toISOString() });
   } catch (e: any) {
     res.status(500).json({ error: e?.message });
   }
+});
+
+// ── Streaming chat (SSE) ──────────────────────────────────────
+router.post("/stream", async (req, res) => {
+  const { message, history = [] } = req.body;
+  if (!message?.trim()) return res.status(400).json({ error: "الرسالة مطلوبة" });
+
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+
+  const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+  try {
+    const agents = await db.select().from(agentsTable);
+    const alerts = await db.select().from(systemAlertsTable).where(eq(systemAlertsTable.resolved, false));
+    const complaints = await db.select().from(complaintsTable);
+    const online = agents.filter(a => a.status === "online").length;
+    const healthScore = Math.min(100, (online / Math.max(agents.length, 1)) * 100 * 0.7 + (100 - Math.min(alerts.length * 5, 30)));
+
+    const systemContext = `
+السياق الحالي للنظام (${new Date().toLocaleString("ar-SA")}):
+• الوكلاء: ${agents.length} إجمالي، ${online} متصل، ${agents.filter(a => a.status === "busy").length} مشغول
+• التنبيهات النشطة: ${alerts.length} (${alerts.slice(0,2).map(a => a.title).join(" | ") || "لا يوجد"})
+• الشكاوى المفتوحة: ${complaints.filter(c => c.status === "open").length}
+• صحة النظام: ${Math.round(healthScore)}%
+`;
+    const billiePrompt = AGENT_SYSTEM_PROMPTS["billie"] + `\n\nأنت بيليه، المشرفة العليا على نظام ACIS. ردودك بالعربية الفصحى، مختصرة وذكية، احترافية ودية.\n${systemContext}`;
+    const msgs = history.slice(-6).map((h: any) => ({
+      role: (h.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
+      content: h.text || h.content || "",
+    }));
+
+    const result = await callAIForTask("text_complex", billiePrompt, message, { history: msgs });
+
+    // Simulate word-by-word streaming of the complete result
+    const words = result.text.split(" ");
+    let accumulated = "";
+    for (let i = 0; i < words.length; i++) {
+      accumulated += (i > 0 ? " " : "") + words[i];
+      send({ type: "chunk", text: accumulated, word_index: i, total_words: words.length });
+      // Small delay for streaming effect (5-15ms per word)
+      await new Promise(r => setTimeout(r, 8));
+    }
+
+    send({ type: "done", text: result.text, model: result.model, tokens: result.tokens, timestamp: new Date().toISOString() });
+
+    await db.insert(activityTable).values({
+      id: randomUUID(), type: "billie_alert",
+      title: "محادثة مع بيليه (stream)",
+      description: message.substring(0, 100),
+    });
+  } catch (err: any) {
+    send({ type: "error", message: err?.message || "فشل الاتصال" });
+  }
+  res.end();
 });
 
 router.get("/alerts", async (_req, res) => {

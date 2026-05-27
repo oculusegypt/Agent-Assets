@@ -70,7 +70,7 @@ export default function Dashboard() {
       refetchAgents();
       refetchActivity();
       loadModelStats();
-    }, 30000);
+    }, 15000);
     return () => clearInterval(interval);
   }, [refetchMetrics, refetchAgents, refetchActivity, loadModelStats]);
 
@@ -285,7 +285,7 @@ export default function Dashboard() {
 
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-mono text-muted-foreground/60 animate-pulse">تحديث كل 30ث</span>
+            <span className="text-xs font-mono text-muted-foreground/60 animate-pulse">تحديث كل 15ث</span>
             <h2 className="text-lg font-semibold uppercase tracking-wider text-muted-foreground">النشاط الحي</h2>
           </div>
           <div className="bg-card border border-border/50 rounded flex flex-col" style={{ height: "480px" }}>

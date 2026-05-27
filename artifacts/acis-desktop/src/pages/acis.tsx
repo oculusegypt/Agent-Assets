@@ -471,9 +471,16 @@ function PipelineStudio({ agents }: { agents: any[] }) {
 
                   {/* Result content */}
                   {step.expanded && step.result && (
-                    <div className="px-4 pb-4 border-t border-border/20 pt-3">
+                    <div className="px-4 pb-4 border-t border-border/20 pt-3 space-y-2">
                       <div className="text-sm text-foreground/85 whitespace-pre-wrap leading-7 max-h-72 overflow-y-auto" dir="rtl">
                         {step.result}
+                      </div>
+                      <div className="flex justify-start gap-2 pt-1">
+                        <button
+                          onClick={() => navigator.clipboard?.writeText(step.result!)}
+                          className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground hover:text-primary px-2 py-1 rounded border border-border/30 hover:border-primary/30 hover:bg-primary/5 transition-colors">
+                          <Brain size={10} /> نسخ النتيجة
+                        </button>
                       </div>
                     </div>
                   )}
