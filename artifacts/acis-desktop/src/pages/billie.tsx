@@ -21,9 +21,10 @@ import {
   Radio, Star, Clock, Hash, Scissors, FlaskConical, RotateCcw,
   ChevronRight, AlertCircle, Info, ArrowRight, GitCompare,
   Volume2, ImageIcon, Loader2, ThumbsUp, ThumbsDown, Copy,
-  Music2, Sparkles, Mic,
+  Music2, Sparkles, Mic, Video, Clapperboard,
   Code2, FolderOpen, FileCode2, FilePlus2, CheckCheck,
   Terminal, GitBranch, Play, ChevronLeft, Eye as EyeIcon,
+  UserPlus,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -71,9 +72,10 @@ type ChatMsg = {
   model?: string;
   ts: string;
   loading?: boolean;
-  mediaType?: "image" | "audio";
+  mediaType?: "image" | "audio" | "video";
   mediaUrl?: string;
   mediaLoading?: boolean;
+  mediaError?: string;
   suggestions?: string[];
   codeTask?: boolean;
   codeSteps?: CodeStep[];
@@ -111,6 +113,10 @@ function detectAudioIntent(text: string): boolean {
   return /(?:ولّد|ولد|اقرأ|اسمعني|اعطيني|أريد|نطّق|تكلّم|اقرأ\s*لي)\s*(?:لي\s*)?(?:صوت|مقطع\s*صوت|تسجيل|الصوت|صوتياً)/i.test(text) ||
     /(?:ولّد|ولد|أنشئ|اصنع|اعمل|أنتج)\s*(?:لي\s*)?(?:موسيقى|موسيقا|مقطع\s*موسيق|لحن|نغمة|أغنية|تسجيل\s*صوتي|مؤثر\s*صوتي)/i.test(text) ||
     /(?:read|speak|voice|tts|say\s*this|generate\s*audio|narrate|music|soundtrack|bgm|sound\s*effect)/i.test(text);
+}
+function detectVideoIntent(text: string): boolean {
+  return /(?:ولّد|ولد|أنشئ|اصنع|اعمل|أنتج|صوّر|أخرج)\s*(?:لي\s*)?(?:فيديو|مقطع\s*(?:فيديو|مرئي)|فيلم\s*قصير|مشهد\s*(?:مرئي|سينمائي)|كليب)/i.test(text) ||
+    /(?:generate|create|make|produce|render)\s*(?:a\s*)?(?:video|clip|short\s*film|reel)/i.test(text);
 }
 function buildSuggestions(text: string): string[] {
   const chips: string[] = [];
@@ -373,6 +379,35 @@ export default function BilliePage() {
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [showCapabilities, setShowCapabilities] = useState(true);
 
+  // ── Wizard إنشاء الوكيل ──
+  const [agentWizard, setAgentWizard] = useState<{ open: boolean; name: string; mission: string; loading: boolean; error: string | null }>({
+    open: false, name: "", mission: "", loading: false, error: null,
+  });
+
+  const openAgentWizard = () => setAgentWizard({ open: true, name: "", mission: "", loading: false, error: null });
+  const closeAgentWizard = () => setAgentWizard(w => ({ ...w, open: false }));
+
+  const submitAgentWizard = async () => {
+    if (!agentWizard.name.trim() || !agentWizard.mission.trim()) return;
+    setAgentWizard(w => ({ ...w, loading: true, error: null }));
+    try {
+      const r = await fetch(`${BASE}/api/billie/create-agent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: agentWizard.name.trim(), mission: agentWizard.mission.trim() }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "فشل الإنشاء");
+      setAgentWizard(w => ({ ...w, open: false, loading: false }));
+      const agent = data.agent;
+      const msg = `✅ تم إنشاء الوكيل **${agent.nameAr || agent.name}** بنجاح!\n\n• **المعرّف:** \`${agent.id}\`\n• **الوصف:** ${agent.descriptionAr || agent.description}\n• **النموذج:** ${agent.model}\n• **الحالة:** ${agent.status}`;
+      setChatHistory(h => [...h, { role: "billie", text: msg, ts: new Date().toISOString(), suggestions: ["عرض الوكلاء", "تشغيل الوكيل الجديد", "أضف وكيلاً آخر"] }]);
+      qc.invalidateQueries();
+    } catch (err: any) {
+      setAgentWizard(w => ({ ...w, loading: false, error: err.message || "خطأ في إنشاء الوكيل" }));
+    }
+  };
+
   // ── جراحة الكود state ──
   const [surgeryAgentId, setSurgeryAgentId] = useState("");
   const [surgeryIssue, setSurgeryIssue] = useState("");
@@ -399,13 +434,14 @@ export default function BilliePage() {
     if (!text.trim() || chatLoading) return;
     const wantsCode  = detectCodeIntent(text);
     const wantsImage = !wantsCode && detectImageIntent(text);
-    const wantsAudio = !wantsCode && detectAudioIntent(text);
+    const wantsAudio = !wantsCode && !wantsImage && detectAudioIntent(text);
+    const wantsVideo = !wantsCode && !wantsImage && !wantsAudio && detectVideoIntent(text);
 
     const userMsg: ChatMsg = { role: "user", text: text.trim(), ts: new Date().toISOString() };
     const streamingMsg: ChatMsg = {
       role: "billie", text: "", ts: new Date().toISOString(), loading: true,
-      mediaType: wantsImage ? "image" : wantsAudio ? "audio" : undefined,
-      mediaLoading: wantsImage || wantsAudio,
+      mediaType: wantsImage ? "image" : wantsAudio ? "audio" : wantsVideo ? "video" : undefined,
+      mediaLoading: wantsImage || wantsAudio || wantsVideo,
       codeTask: wantsCode,
       codeSteps: wantsCode ? [] : undefined,
     };
@@ -485,29 +521,44 @@ export default function BilliePage() {
     }
 
     // ── Media generation (concurrent) ──
-    if (wantsImage || wantsAudio) {
-      const mediaEndpoint = wantsImage ? `${BASE}/api/billie/generate-image` : `${BASE}/api/billie/tts-chat`;
-      const mediaBody = wantsImage
-        ? { prompt: text.trim() }
-        : { text: text.replace(/(?:ولّد|ولد|اقرأ|نطّق)\s*(?:لي\s*)?(?:صوت[:\s]*)?/i, "").trim().slice(0, 500) };
+    if (wantsImage || wantsAudio || wantsVideo) {
+      let mediaEndpoint = "";
+      let mediaBody: Record<string, string> = {};
+      if (wantsImage) {
+        mediaEndpoint = `${BASE}/api/billie/generate-image`;
+        mediaBody = { prompt: text.trim() };
+      } else if (wantsVideo) {
+        mediaEndpoint = `${BASE}/api/production/generate-video`;
+        mediaBody = { script: text.replace(/(?:ولّد|ولد|أنشئ|اعمل|أنتج|صوّر)\s*(?:لي\s*)?(?:فيديو[:\s]*|مقطع[:\s]*)?/i, "").trim().slice(0, 400) };
+      } else {
+        mediaEndpoint = `${BASE}/api/billie/tts-chat`;
+        mediaBody = { text: text.replace(/(?:ولّد|ولد|اقرأ|نطّق|أنشئ|اصنع|اعمل|أنتج)\s*(?:لي\s*)?(?:صوت|موسيقى|موسيقا|لحن[:\s]*)?/i, "").trim().slice(0, 500) };
+      }
 
       fetch(mediaEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(mediaBody),
-      }).then(r => r.json()).then(result => {
+      }).then(async r => {
+        const result = await r.json();
         setChatHistory(h => {
           const copy = [...h];
           const li = copy.length - 1;
           if (copy[li]?.role === "billie") {
-            copy[li] = { ...copy[li], mediaLoading: false, ...(result?.filename ? { mediaUrl: `${BASE}/api/media/${result.filename}` } : {}) };
+            if (result?.filename) {
+              copy[li] = { ...copy[li], mediaLoading: false, mediaUrl: `${BASE}/api/media/${result.filename}` };
+            } else {
+              const errMsg = result?.error || "فشل توليد الوسائط — تحقق من إعدادات GEMINI_API_KEY";
+              copy[li] = { ...copy[li], mediaLoading: false, mediaError: errMsg };
+            }
           }
           return copy;
         });
-      }).catch(() => {
+      }).catch(err => {
         setChatHistory(h => {
           const copy = [...h];
-          if (copy[copy.length - 1]?.role === "billie") copy[copy.length - 1] = { ...copy[copy.length - 1], mediaLoading: false };
+          if (copy[copy.length - 1]?.role === "billie")
+            copy[copy.length - 1] = { ...copy[copy.length - 1], mediaLoading: false, mediaError: err?.message || "خطأ في الاتصال" };
           return copy;
         });
       });
