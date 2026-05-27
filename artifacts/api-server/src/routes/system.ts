@@ -5,6 +5,8 @@ import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { callAI, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
 
+const SERVER_START = Date.now();
+
 const router = Router();
 
 router.get("/metrics", async (_req, res) => {
@@ -43,7 +45,7 @@ router.get("/metrics", async (_req, res) => {
     total_projects: projects.length,
     tokens_used_today: tokensToday,
     system_health: Math.round(healthScore),
-    uptime_hours: 24 + Math.random() * 120,
+    uptime_hours: Math.round(((Date.now() - SERVER_START) / 3600000) * 10) / 10,
   });
 });
 
@@ -162,6 +164,63 @@ router.post("/health-check", async (_req, res) => {
     alert_ids: newAlerts,
     checked_at: new Date().toISOString(),
   });
+});
+
+/* ── Seed all 19 agents to DB ── */
+const AGENT_CATALOG = [
+  { id:"billie",           name_ar:"بيليه - المشرف الأعلى",         system:"nexus",  model:"gemini-2.5-pro",   color:"text-primary",    icon:"Brain",         capabilities:["مراقبة الوكلاء","تحليل الصحة","تقارير النظام","حل الشكاوى","اتخاذ قرارات استراتيجية"] },
+  { id:"acis-master",      name_ar:"منسق ACIS الرئيسي",             system:"acis",   model:"gemini-2.5-pro",   color:"text-cyan-400",   icon:"Film",          capabilities:["تنسيق خط الإنتاج","توزيع المهام","إدارة الأولويات","ضمان الجودة"] },
+  { id:"story-architect",  name_ar:"معمار القصة",                   system:"acis",   model:"gemini-2.5-pro",   color:"text-purple-400", icon:"BookOpen",      capabilities:["بناء هياكل سردية","تطوير شخصيات","كتابة حوار","تحليل سيناريو"] },
+  { id:"director-agent",   name_ar:"وكيل المخرج",                   system:"acis",   model:"gemini-2.5-pro",   color:"text-orange-400", icon:"Camera",        capabilities:["الأسلوب البصري","تعليمات الكاميرا","حركات الكاميرا","الإيقاع الدرامي"] },
+  { id:"cinematic-director",name_ar:"المخرج السينمائي التقني",      system:"acis",   model:"gemini-2.5-flash", color:"text-yellow-400", icon:"Clapperboard",  capabilities:["جداول الإنتاج","اختيار المعدات","خطط الإضاءة","توثيق الإنتاج"] },
+  { id:"scene-breakdown",  name_ar:"محلل المشاهد",                  system:"acis",   model:"gemini-2.5-pro",   color:"text-green-400",  icon:"ListChecks",    capabilities:["تفكيك المشاهد","جداول التصوير","متطلبات المشهد","اكتشاف التناقضات"] },
+  { id:"emotional-narrative",name_ar:"وكيل السرد العاطفي",          system:"acis",   model:"gemini-2.5-pro",   color:"text-rose-400",   icon:"Heart",         capabilities:["المسار العاطفي","مستوى التوتر","لحظات كاثارسيس","خرائط عاطفية"] },
+  { id:"ai-prompt-director",name_ar:"مخرج البرومبت",                system:"acis",   model:"gemini-2.5-pro",   color:"text-violet-400", icon:"Wand2",         capabilities:["برومبت FLUX.1","برومبت Wan Video","برومبت Runway","تقنيات التحسين"] },
+  { id:"model-orchestrator",name_ar:"منسق النماذج",                 system:"acis",   model:"gemini-2.5-pro",   color:"text-sky-400",    icon:"GitBranch",     capabilities:["اختيار النموذج الأمثل","مقارنة النتائج","تتبع التكاليف","تحسين الجودة/التكلفة"] },
+  { id:"honesty-auditor",  name_ar:"مدقق الصدق",                   system:"acis",   model:"gemini-2.5-pro",   color:"text-emerald-400",icon:"ShieldCheck",   capabilities:["فحص الهلوسات","كشف التحيزات","التحقق من الحقائق","تقارير التدقيق"] },
+  { id:"critic-agent",     name_ar:"الناقد الفني",                  system:"acis",   model:"gemini-2.5-pro",   color:"text-amber-400",  icon:"Star",          capabilities:["تقييم السيناريوهات","مقارنة بالمراجع","ملاحظات نقدية","مراجعات احترافية"] },
+  { id:"visual-storyboard",name_ar:"مصمم اللوحة المصورة",           system:"acis",   model:"gemini-2.5-pro",   color:"text-pink-400",   icon:"Image",         capabilities:["وصف اللقطات","تسلسل اللقطات","التكوين البصري","mood boards"] },
+  { id:"sound-music",      name_ar:"وكيل الصوت والموسيقى",          system:"acis",   model:"gemini-2.5-pro",   color:"text-indigo-400", icon:"Music",         capabilities:["الهوية الموسيقية","توجيهات MusicGen","soundscape","توجيهات TTS"] },
+  { id:"gpu-render-workers",name_ar:"منسق وحدات التصيير",           system:"acis",   model:"gemini-2.5-flash", color:"text-slate-400",  icon:"Cpu",           capabilities:["إدارة قوائم الانتظار","تقدير أوقات التوليد","مراقبة الموارد","تقارير الأداء"] },
+  { id:"timeline-assembly",name_ar:"منسق الجدول الزمني",            system:"acis",   model:"gemini-2.5-flash", color:"text-teal-400",   icon:"Layers",        capabilities:["تنظيم الأصول","إيقاع المونتاج","نقاط القطع","الجدول الزمني"] },
+  { id:"post-production",  name_ar:"مدير ما بعد الإنتاج",           system:"acis",   model:"gemini-2.5-flash", color:"text-fuchsia-400",icon:"Sparkles",      capabilities:["تصحيح الألوان","VFX","المزج الصوتي","تصدير الملفات"] },
+  { id:"stv-master",       name_ar:"منسق القصة إلى الرؤية",         system:"acis",   model:"gemini-2.5-pro",   color:"text-lime-400",   icon:"Layers",        capabilities:["تحويل النص إلى مرئي","تنسيق التسلسل","ضمان التماسك البصري","إدارة مشاريع متعددة"] },
+  { id:"nexus-master",     name_ar:"منسق نظام NEXUS",               system:"nexus",  model:"gemini-2.5-pro",   color:"text-cyan-400",   icon:"Building2",     capabilities:["تنسيق 10 وكلاء مكتبية","تحليل الطلبات","إدارة الأولويات","تقارير إنتاجية"] },
+  { id:"caeos-master",     name_ar:"المنسق الأعلى لنظام CAEOS",     system:"caeos",  model:"gemini-2.5-pro",   color:"text-orange-400", icon:"Scale",         capabilities:["الفحص الأخلاقي","تقارير الامتثال","نقاط الضعف","حوكمة الذكاء الاصطناعي"] },
+];
+
+router.post("/seed-agents", async (_req, res) => {
+  let seeded = 0;
+  let updated = 0;
+  for (const a of AGENT_CATALOG) {
+    try {
+      const existing = await db.select({ id: agentsTable.id }).from(agentsTable).where(eq(agentsTable.id, a.id));
+      if (existing.length === 0) {
+        await db.insert(agentsTable).values({
+          id: a.id, name: a.id, nameAr: a.name_ar, system: a.system,
+          description: a.name_ar, descriptionAr: a.name_ar,
+          status: "online", model: a.model, capabilities: a.capabilities,
+          subagents: [], icon: a.icon, color: a.color, prompt: a.id,
+          executions_today: 0, success_rate: 100, avg_response_ms: 1200,
+        });
+        seeded++;
+      } else {
+        await db.update(agentsTable).set({
+          nameAr: a.name_ar, status: "online", model: a.model,
+          capabilities: a.capabilities, updated_at: new Date(),
+        }).where(eq(agentsTable.id, a.id));
+        updated++;
+      }
+    } catch {}
+  }
+
+  await db.insert(activityTable).values({
+    id: randomUUID(), type: "system_update",
+    title: "تهيئة الوكلاء اكتملت",
+    description: `زُرع ${seeded} وكيل جديد · حُدِّث ${updated} وكيل · الإجمالي ${AGENT_CATALOG.length} وكيل`,
+  });
+
+  res.json({ success: true, seeded, updated, total: AGENT_CATALOG.length });
 });
 
 export default router;
