@@ -4,59 +4,215 @@ import { db } from "@workspace/db";
 import { systemSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
-async function getDbKey(settingKey: string): Promise<string | null> {
+/* ─── Dynamic Key Resolution ────────────────────────────────── */
+
+async function getDbSetting(key: string): Promise<string | null> {
   try {
-    const rows = await db.select().from(systemSettingsTable).where(eq(systemSettingsTable.key, settingKey));
+    const rows = await db.select().from(systemSettingsTable).where(eq(systemSettingsTable.key, key));
     return rows[0]?.value || null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 export async function getGeminiKey(): Promise<string | null> {
-  return process.env.GEMINI_API_KEY || await getDbKey("api_key.gemini");
+  return process.env.GEMINI_API_KEY || await getDbSetting("api_key.gemini") || null;
 }
 
 export async function getAlibabaKey(): Promise<string | null> {
-  return process.env.ALIBABA_API_KEY || await getDbKey("api_key.alibaba");
+  return process.env.ALIBABA_API_KEY || await getDbSetting("api_key.alibaba") || null;
 }
 
-export async function getGenAI(): Promise<GoogleGenerativeAI | null> {
+async function buildGemini(): Promise<GoogleGenerativeAI | null> {
   const key = await getGeminiKey();
   return key ? new GoogleGenerativeAI(key) : null;
 }
 
-export async function getQwenClient(): Promise<OpenAI | null> {
+async function buildQwen(): Promise<OpenAI | null> {
   const key = await getAlibabaKey();
   return key ? new OpenAI({ apiKey: key, baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1" }) : null;
 }
 
-const geminiApiKey = process.env.GEMINI_API_KEY;
-const alibabaApiKey = process.env.ALIBABA_API_KEY;
+/* ─── Smart Model Router ────────────────────────────────────── */
 
-export const genAI = geminiApiKey ? new GoogleGenerativeAI(geminiApiKey) : null;
+export type TaskTier = "flash" | "pro";
+export type ModelProvider = "gemini" | "qwen" | "auto";
 
-export const qwenClient = alibabaApiKey
-  ? new OpenAI({
-      apiKey: alibabaApiKey,
-      baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    })
-  : null;
+export interface AICallOptions {
+  tier?: TaskTier;
+  preferArabic?: boolean;
+  provider?: ModelProvider;
+}
 
-/* ─── Gemini Direct ─────────────────────────────────────────── */
+/**
+ * Agent → optimal tier mapping.
+ * "pro" = Gemini 2.5 Pro / Qwen Max  (complex creative or analytical)
+ * "flash" = Gemini 2.5 Flash / Qwen Plus (fast tasks, monitoring)
+ */
+const AGENT_TIER_MAP: Record<string, TaskTier> = {
+  "billie":              "pro",
+  "story-architect":     "pro",
+  "director-agent":      "pro",
+  "cinematic-director":  "pro",
+  "emotional-narrative": "pro",
+  "critic-agent":        "pro",
+  "visual-storyboard":   "pro",
+  "ai-prompt-director":  "pro",
+  "model-orchestrator":  "pro",
+  "stv-master":          "pro",
+  "honesty-auditor":     "flash",
+  "caeos-master":        "flash",
+  "nexus-master":        "flash",
+  "gpu-render-workers":  "flash",
+  "timeline-assembly":   "flash",
+  "post-production":     "flash",
+  "scene-breakdown":     "flash",
+  "sound-music":         "flash",
+  "acis-master":         "flash",
+};
+
+export function getAgentTier(agentId: string): TaskTier {
+  return AGENT_TIER_MAP[agentId] ?? "flash";
+}
+
+/**
+ * Detect if text is Arabic-dominant (>20% Arabic chars).
+ */
+export function isArabicDominant(text: string): boolean {
+  const arabicCount = (text.match(/[\u0600-\u06FF]/g) || []).length;
+  return arabicCount > text.length * 0.2;
+}
+
+/**
+ * Smart model selection: picks the best provider + model based on tier,
+ * language preference, and key availability.
+ *
+ * Strategy:
+ *   - pro tier:   gemini-2.5-pro → qwen-max (fallback)
+ *   - flash tier: gemini-2.5-flash → qwen-plus (fallback)
+ *   - Arabic dominant + flash: prefer qwen-plus first, then gemini-2.5-flash
+ *   - provider="qwen": skip Gemini entirely
+ *   - provider="gemini": skip Qwen entirely
+ */
+async function runSmartAI(
+  systemPrompt: string,
+  messages: Array<{ role: "user" | "model" | "system"; content: string }>,
+  opts: AICallOptions = {}
+): Promise<{ text: string; tokens: number; model: string }> {
+  const tier = opts.tier ?? "flash";
+  const provider = opts.provider ?? "auto";
+  const arabic = opts.preferArabic ?? false;
+
+  const [gemini, qwen] = await Promise.all([buildGemini(), buildQwen()]);
+
+  const geminiModel = tier === "pro" ? "gemini-2.5-pro" : "gemini-2.5-flash";
+  const qwenModel   = tier === "pro" ? "qwen-max"       : "qwen-plus";
+
+  // Determine call order
+  const useGemini = provider !== "qwen" && !!gemini;
+  const useQwen   = provider !== "gemini" && !!qwen;
+
+  // Arabic + auto → try Qwen first for flash tasks (Qwen is stronger in Arabic)
+  const qwenFirst = arabic && tier === "flash" && provider === "auto";
+
+  const tryGemini = async () => {
+    if (!gemini) throw new Error("GEMINI_API_KEY غير مُهيّأ");
+    const m = gemini.getGenerativeModel({ model: geminiModel, systemInstruction: systemPrompt });
+    const contents = messages
+      .filter(m => m.role !== "system")
+      .map(m => ({ role: m.role as "user" | "model", parts: [{ text: m.content }] }));
+    const result = await m.generateContent({ contents, generationConfig: { maxOutputTokens: 8192 } });
+    return { text: result.response.text(), tokens: result.response.usageMetadata?.totalTokenCount ?? 0, model: geminiModel };
+  };
+
+  const tryQwen = async () => {
+    if (!qwen) throw new Error("ALIBABA_API_KEY غير مُهيّأ");
+    const msgs: any[] = [
+      { role: "system", content: systemPrompt },
+      ...messages.filter(m => m.role !== "system").map(m => ({ role: m.role === "model" ? "assistant" : m.role, content: m.content })),
+    ];
+    const r = await qwen.chat.completions.create({ model: qwenModel, messages: msgs, max_tokens: 8192 });
+    return { text: r.choices[0]?.message?.content ?? "", tokens: r.usage?.total_tokens ?? 0, model: qwenModel };
+  };
+
+  // Build execution order
+  const order: Array<() => Promise<{ text: string; tokens: number; model: string }>> = [];
+
+  if (qwenFirst) {
+    if (useQwen)   order.push(tryQwen);
+    if (useGemini) order.push(tryGemini);
+  } else {
+    if (useGemini) order.push(tryGemini);
+    if (useQwen)   order.push(tryQwen);
+  }
+
+  if (order.length === 0) {
+    throw new Error("جميع نماذج الذكاء الاصطناعي غير متاحة — تحقق من مفاتيح GEMINI_API_KEY أو ALIBABA_API_KEY");
+  }
+
+  let lastError: any;
+  for (const fn of order) {
+    try {
+      return await fn();
+    } catch (e: any) {
+      lastError = e;
+      console.warn(`[AI] فشل النموذج، التبديل للتالي: ${e?.message?.slice(0, 100)}`);
+    }
+  }
+  throw lastError ?? new Error("فشل جميع النماذج");
+}
+
+/* ─── Public API ────────────────────────────────────────────── */
+
+export async function callAI(
+  systemPrompt: string,
+  userMessage: string,
+  tier: TaskTier = "flash",
+  opts: Omit<AICallOptions, "tier"> = {}
+): Promise<{ text: string; tokens: number; model: string }> {
+  const arabic = isArabicDominant(userMessage) || isArabicDominant(systemPrompt);
+  return runSmartAI(systemPrompt, [{ role: "user", content: userMessage }], { tier, preferArabic: arabic, ...opts });
+}
+
+export async function callAIWithHistory(
+  systemPrompt: string,
+  history: Array<{ role: "user" | "assistant"; content: string }>,
+  newMessage: string,
+  tier: TaskTier = "flash",
+  opts: Omit<AICallOptions, "tier"> = {}
+): Promise<{ text: string; tokens: number; model: string }> {
+  const arabic = isArabicDominant(newMessage) || isArabicDominant(systemPrompt);
+  const messages = [
+    ...history.map(h => ({ role: h.role === "assistant" ? "model" as const : "user" as const, content: h.content })),
+    { role: "user" as const, content: newMessage },
+  ];
+  return runSmartAI(systemPrompt, messages, { tier, preferArabic: arabic, ...opts });
+}
+
+/** Direct Gemini call (bypasses Qwen fallback) */
 export async function callGemini(
   systemPrompt: string,
   userMessage: string,
   model: "flash" | "pro" = "flash"
 ): Promise<{ text: string; tokens: number }> {
-  if (!genAI) throw new Error("GEMINI_API_KEY غير مُهيّأ");
-  const modelName = model === "pro" ? "gemini-2.5-pro" : "gemini-2.5-flash";
-  const m = genAI.getGenerativeModel({ model: modelName, systemInstruction: systemPrompt });
-  const result = await m.generateContent({
-    contents: [{ role: "user", parts: [{ text: userMessage }] }],
-    generationConfig: { maxOutputTokens: 8192 },
+  const result = await callAI(systemPrompt, userMessage, model, { provider: "gemini" });
+  return { text: result.text, tokens: result.tokens };
+}
+
+/** Direct Qwen call (bypasses Gemini) */
+export async function callQwen(
+  systemPrompt: string,
+  userMessage: string,
+  model: "turbo" | "max" | "plus" = "plus"
+): Promise<{ text: string; tokens: number }> {
+  const tier = model === "max" ? "pro" : "flash";
+  const qwen = await buildQwen();
+  if (!qwen) throw new Error("ALIBABA_API_KEY غير مُهيّأ");
+  const modelName = { turbo: "qwen-turbo", plus: "qwen-plus", max: "qwen-max" }[model];
+  const r = await qwen.chat.completions.create({
+    model: modelName,
+    messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userMessage }],
+    max_tokens: 8192,
   });
-  return { text: result.response.text(), tokens: result.response.usageMetadata?.totalTokenCount ?? 0 };
+  return { text: r.choices[0]?.message?.content ?? "", tokens: r.usage?.total_tokens ?? 0 };
 }
 
 export async function callGeminiWithHistory(
@@ -65,31 +221,8 @@ export async function callGeminiWithHistory(
   newMessage: string,
   model: "flash" | "pro" = "flash"
 ): Promise<{ text: string; tokens: number }> {
-  if (!genAI) throw new Error("GEMINI_API_KEY غير مُهيّأ");
-  const modelName = model === "pro" ? "gemini-2.5-pro" : "gemini-2.5-flash";
-  const m = genAI.getGenerativeModel({ model: modelName, systemInstruction: systemPrompt });
-  const contents = [
-    ...history.map(h => ({ role: h.role === "assistant" ? "model" : "user" as any, parts: [{ text: h.content }] })),
-    { role: "user", parts: [{ text: newMessage }] },
-  ];
-  const result = await m.generateContent({ contents, generationConfig: { maxOutputTokens: 8192 } });
-  return { text: result.response.text(), tokens: result.response.usageMetadata?.totalTokenCount ?? 0 };
-}
-
-/* ─── Qwen Direct ───────────────────────────────────────────── */
-export async function callQwen(
-  systemPrompt: string,
-  userMessage: string,
-  model: "turbo" | "max" | "plus" = "plus"
-): Promise<{ text: string; tokens: number }> {
-  if (!qwenClient) throw new Error("ALIBABA_API_KEY غير مُهيّأ");
-  const modelMap = { turbo: "qwen-turbo", plus: "qwen-plus", max: "qwen-max" };
-  const response = await qwenClient.chat.completions.create({
-    model: modelMap[model],
-    messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userMessage }],
-    max_tokens: 4096,
-  });
-  return { text: response.choices[0]?.message?.content ?? "", tokens: response.usage?.total_tokens ?? 0 };
+  const result = await callAIWithHistory(systemPrompt, history, newMessage, model, { provider: "gemini" });
+  return { text: result.text, tokens: result.tokens };
 }
 
 export async function callQwenWithHistory(
@@ -98,59 +231,32 @@ export async function callQwenWithHistory(
   newMessage: string,
   model: "turbo" | "max" | "plus" = "plus"
 ): Promise<{ text: string; tokens: number }> {
-  if (!qwenClient) throw new Error("ALIBABA_API_KEY غير مُهيّأ");
-  const modelMap = { turbo: "qwen-turbo", plus: "qwen-plus", max: "qwen-max" };
-  const messages: any[] = [
+  const qwen = await buildQwen();
+  if (!qwen) throw new Error("ALIBABA_API_KEY غير مُهيّأ");
+  const modelName = { turbo: "qwen-turbo", plus: "qwen-plus", max: "qwen-max" }[model];
+  const msgs: any[] = [
     { role: "system", content: systemPrompt },
     ...history.map(h => ({ role: h.role, content: h.content })),
     { role: "user", content: newMessage },
   ];
-  const response = await qwenClient.chat.completions.create({ model: modelMap[model], messages, max_tokens: 4096 });
-  return { text: response.choices[0]?.message?.content ?? "", tokens: response.usage?.total_tokens ?? 0 };
+  const r = await qwen.chat.completions.create({ model: modelName, messages: msgs, max_tokens: 8192 });
+  return { text: r.choices[0]?.message?.content ?? "", tokens: r.usage?.total_tokens ?? 0 };
 }
 
-/* ─── Smart Fallback: Gemini → Qwen ────────────────────────── */
-export async function callAI(
-  systemPrompt: string,
-  userMessage: string,
-  preferredTier: "flash" | "pro" = "flash"
-): Promise<{ text: string; tokens: number; model: string }> {
-  if (genAI) {
-    try {
-      const r = await callGemini(systemPrompt, userMessage, preferredTier);
-      return { ...r, model: preferredTier === "pro" ? "gemini-2.5-pro" : "gemini-2.5-flash" };
-    } catch (e: any) {
-      console.warn("[AI] Gemini فشل، التبديل إلى Qwen:", e?.message?.slice(0, 120));
-    }
-  }
-  if (qwenClient) {
-    const qm = preferredTier === "pro" ? "max" : "plus";
-    const r = await callQwen(systemPrompt, userMessage, qm);
-    return { ...r, model: `qwen-${qm}` };
-  }
-  throw new Error("جميع نماذج الذكاء الاصطناعي غير متاحة — تحقق من مفاتيح GEMINI_API_KEY أو ALIBABA_API_KEY");
-}
+/** Key status for API */
+export async function getKeyStatus(): Promise<{
+  gemini: { configured: boolean; source: "env" | "db" | null };
+  alibaba: { configured: boolean; source: "env" | "db" | null };
+}> {
+  const geminiEnv = !!process.env.GEMINI_API_KEY;
+  const alibabaEnv = !!process.env.ALIBABA_API_KEY;
+  const geminiDb = !geminiEnv ? !!(await getDbSetting("api_key.gemini")) : false;
+  const alibabaDb = !alibabaEnv ? !!(await getDbSetting("api_key.alibaba")) : false;
 
-export async function callAIWithHistory(
-  systemPrompt: string,
-  history: Array<{ role: "user" | "assistant"; content: string }>,
-  newMessage: string,
-  preferredTier: "flash" | "pro" = "flash"
-): Promise<{ text: string; tokens: number; model: string }> {
-  if (genAI) {
-    try {
-      const r = await callGeminiWithHistory(systemPrompt, history, newMessage, preferredTier);
-      return { ...r, model: preferredTier === "pro" ? "gemini-2.5-pro" : "gemini-2.5-flash" };
-    } catch (e: any) {
-      console.warn("[AI] Gemini (history) فشل، التبديل إلى Qwen:", e?.message?.slice(0, 120));
-    }
-  }
-  if (qwenClient) {
-    const qm = preferredTier === "pro" ? "max" : "plus";
-    const r = await callQwenWithHistory(systemPrompt, history, newMessage, qm);
-    return { ...r, model: `qwen-${qm}` };
-  }
-  throw new Error("جميع نماذج الذكاء الاصطناعي غير متاحة — تحقق من مفاتيح GEMINI_API_KEY أو ALIBABA_API_KEY");
+  return {
+    gemini:  { configured: geminiEnv || geminiDb,   source: geminiEnv ? "env" : geminiDb ? "db" : null },
+    alibaba: { configured: alibabaEnv || alibabaDb, source: alibabaEnv ? "env" : alibabaDb ? "db" : null },
+  };
 }
 
 /* ─── Agent System Prompts ──────────────────────────────────── */
@@ -366,7 +472,8 @@ export function getAgentSystemPrompt(agentId: string, agentName: string): string
   );
 }
 
-export function isArabicDominant(text: string): boolean {
-  const arabicCount = (text.match(/[\u0600-\u06FF]/g) || []).length;
-  return arabicCount > text.length * 0.2;
-}
+/* Legacy static exports (keep for compatibility with settings/test-ai) */
+export const genAI = process.env.GEMINI_API_KEY ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY) : null;
+export const qwenClient = process.env.ALIBABA_API_KEY
+  ? new OpenAI({ apiKey: process.env.ALIBABA_API_KEY, baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1" })
+  : null;

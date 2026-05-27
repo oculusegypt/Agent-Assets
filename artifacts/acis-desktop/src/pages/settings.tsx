@@ -11,7 +11,7 @@ import {
   Monitor, Save, RefreshCw, Trash2, CheckCircle2,
   AlertTriangle, Zap, Eye, EyeOff, TestTube2, Info,
   RotateCcw, Shield, Activity, MessageSquare, Building2,
-  ChevronDown, ChevronUp, Loader2, Circle, X,
+  ChevronDown, ChevronUp, Loader2, Circle, X, Key,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -21,6 +21,7 @@ type Setting = { key: string; value: string; category: string; description?: str
 type DbTable = { name: string; nameAr: string; count: number; icon: string };
 
 const TABS = [
+  { id: "api-keys",     label: "مفاتيح API",         icon: Key,          color: "text-yellow-400" },
   { id: "ai",           label: "الذكاء الاصطناعي", icon: BrainCircuit, color: "text-primary" },
   { id: "agents",       label: "الوكلاء",           icon: Bot,          color: "text-purple-400" },
   { id: "system",       label: "النظام",             icon: Cpu,          color: "text-amber-400" },
@@ -55,6 +56,13 @@ export default function SettingsPage() {
   const [agentSaving, setAgentSaving] = useState<string | null>(null);
   const [resetConfirm, setResetConfirm] = useState(false);
 
+  type KeyStatus = { configured: boolean; source: "env" | "db" | null };
+  const [keyStatus, setKeyStatus] = useState<{ gemini: KeyStatus; alibaba: KeyStatus } | null>(null);
+  const [keyInputs, setKeyInputs] = useState<{ gemini: string; alibaba: string }>({ gemini: "", alibaba: "" });
+  const [showKey, setShowKey] = useState<{ gemini: boolean; alibaba: boolean }>({ gemini: false, alibaba: false });
+  const [keySaving, setKeySaving] = useState(false);
+  const [keyMsg, setKeyMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
   const { data: agents, refetch: refetchAgents } = useListAgents();
   const qc = useQueryClient();
 
@@ -70,8 +78,44 @@ export default function SettingsPage() {
     setDbStats(d);
   }, []);
 
+  const loadKeyStatus = useCallback(async () => {
+    const r = await fetch(`${BASE}/api/settings/api-keys`);
+    const d = await r.json();
+    setKeyStatus(d);
+  }, []);
+
+  const saveApiKeys = async () => {
+    setKeySaving(true);
+    setKeyMsg(null);
+    try {
+      const body: Record<string, string> = {};
+      if (keyInputs.gemini.trim()) body.gemini = keyInputs.gemini.trim();
+      if (keyInputs.alibaba.trim()) body.alibaba = keyInputs.alibaba.trim();
+      if (Object.keys(body).length === 0) {
+        setKeyMsg({ type: "err", text: "أدخل مفتاحاً واحداً على الأقل" });
+        setKeySaving(false);
+        return;
+      }
+      const r = await fetch(`${BASE}/api/settings/api-keys`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      if (r.ok) {
+        await loadKeyStatus();
+        setKeyInputs({ gemini: "", alibaba: "" });
+        setKeyMsg({ type: "ok", text: "تم حفظ المفاتيح بنجاح في قاعدة البيانات" });
+        setTimeout(() => setKeyMsg(null), 3500);
+      } else {
+        setKeyMsg({ type: "err", text: "فشل الحفظ — حاول مجدداً" });
+      }
+    } catch {
+      setKeyMsg({ type: "err", text: "خطأ في الاتصال بالسيرفر" });
+    }
+    setKeySaving(false);
+  };
+
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (tab === "database") loadDb(); }, [tab, loadDb]);
+  useEffect(() => { if (tab === "api-keys") loadKeyStatus(); }, [tab, loadKeyStatus]);
 
   const getSetting = (key: string) =>
     changed[key] !== undefined ? changed[key] : (settings.find(s => s.key === key)?.value ?? "");
@@ -192,6 +236,142 @@ export default function SettingsPage() {
           </button>
         ))}
       </div>
+
+      {/* ── API Keys Tab ── */}
+      {tab === "api-keys" && (
+        <div className="space-y-5">
+          {/* Smart Routing Info */}
+          <div className="p-4 rounded border border-primary/20 bg-primary/5 text-sm space-y-2">
+            <div className="flex items-center gap-2 font-semibold text-primary">
+              <Zap size={15} /> نظام الاختيار الذكي للنماذج
+            </div>
+            <div className="text-muted-foreground text-xs space-y-1">
+              <p>• <span className="text-foreground font-medium">المهام الإبداعية المعقدة</span> (القصة، الإخراج، النقد، بيليه): <span className="font-mono text-primary">gemini-2.5-pro → qwen-max</span></p>
+              <p>• <span className="text-foreground font-medium">المهام السريعة والمراقبة</span> (NEXUS، CAEOS، التجميع): <span className="font-mono text-primary">gemini-2.5-flash → qwen-plus</span></p>
+              <p>• <span className="text-foreground font-medium">المحتوى العربي</span> (flash tier): <span className="font-mono text-primary">qwen-plus أولاً → gemini-2.5-flash احتياطي</span></p>
+              <p>• <span className="text-foreground font-medium">عند فشل أي نموذج</span>: التبديل التلقائي للنموذج الآخر</p>
+            </div>
+          </div>
+
+          {/* Key Status */}
+          <SectionCard icon={<Shield size={16} className="text-yellow-400" />} title="حالة المفاتيح الحالية">
+            {!keyStatus ? (
+              <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                <Loader2 size={14} className="animate-spin" /> جاري الفحص...
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {([
+                  { id: "gemini", label: "Gemini (Google)", envVar: "GEMINI_API_KEY", color: "text-primary", bg: "bg-primary/5 border-primary/20", models: "gemini-2.5-pro · gemini-2.5-flash" },
+                  { id: "alibaba", label: "Qwen (Alibaba)", envVar: "ALIBABA_API_KEY", color: "text-orange-400", bg: "bg-orange-500/5 border-orange-500/20", models: "qwen-max · qwen-plus · qwen-turbo" },
+                ] as const).map(p => {
+                  const st = keyStatus[p.id];
+                  return (
+                    <div key={p.id} className={`p-4 rounded border ${st.configured ? p.bg : "bg-red-500/5 border-red-500/20"} space-y-2`}>
+                      <div className="flex items-center justify-between">
+                        <span className={`font-semibold text-sm ${st.configured ? p.color : "text-red-400"}`}>{p.label}</span>
+                        {st.configured ? (
+                          <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                            st.source === "env"
+                              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                              : "bg-sky-500/10 border-sky-500/30 text-sky-400"
+                          }`}>
+                            {st.source === "env" ? "✓ متغير بيئة" : "✓ قاعدة بيانات"}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded border bg-red-500/10 border-red-500/30 text-red-400">✗ غير مضبوط</span>
+                        )}
+                      </div>
+                      <div className="text-[10px] font-mono text-muted-foreground">{p.envVar}</div>
+                      <div className="text-[10px] text-muted-foreground">{p.models}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <Button size="sm" variant="outline" onClick={loadKeyStatus} className="gap-1.5 text-xs text-muted-foreground mt-1">
+              <RefreshCw size={11} /> تحديث الحالة
+            </Button>
+          </SectionCard>
+
+          {/* Enter / Update Keys */}
+          <SectionCard icon={<Key size={16} className="text-yellow-400" />} title="إدخال أو تحديث المفاتيح">
+            <div className="p-3 rounded border border-amber-500/20 bg-amber-500/5 text-amber-400 text-xs flex gap-2 mb-2">
+              <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+              <span>المفاتيح المدخلة هنا تُحفظ في قاعدة البيانات كاحتياط. للأمان الأقصى استخدم متغيرات البيئة (Replit Secrets).</span>
+            </div>
+
+            {keyMsg && (
+              <div className={`p-3 rounded border text-xs flex items-center gap-2 ${
+                keyMsg.type === "ok"
+                  ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-400"
+                  : "border-red-500/30 bg-red-500/5 text-red-400"
+              }`}>
+                {keyMsg.type === "ok" ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
+                {keyMsg.text}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              {([
+                { id: "gemini" as const, label: "Gemini API Key", placeholder: "AIza...", hint: "من Google AI Studio → aistudio.google.com" },
+                { id: "alibaba" as const, label: "Alibaba API Key", placeholder: "sk-...", hint: "من Alibaba DashScope → dashscope.aliyuncs.com" },
+              ]).map(f => (
+                <div key={f.id}>
+                  <label className="text-xs text-muted-foreground mb-1.5 block">{f.label}</label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Input
+                        type={showKey[f.id] ? "text" : "password"}
+                        value={keyInputs[f.id]}
+                        onChange={e => setKeyInputs(p => ({ ...p, [f.id]: e.target.value }))}
+                        placeholder={keyStatus?.[f.id]?.configured ? "اتركه فارغاً للإبقاء على المفتاح الحالي" : f.placeholder}
+                        className="text-sm font-mono pr-10"
+                        dir="ltr"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowKey(p => ({ ...p, [f.id]: !p[f.id] }))}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {showKey[f.id] ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1">{f.hint}</p>
+                </div>
+              ))}
+            </div>
+
+            <Button onClick={saveApiKeys} disabled={keySaving} className="gap-1.5 w-full mt-2">
+              {keySaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              حفظ المفاتيح في قاعدة البيانات
+            </Button>
+          </SectionCard>
+
+          {/* Agent Model Map */}
+          <SectionCard icon={<Bot size={16} className="text-purple-400" />} title="خريطة النماذج لكل وكيل">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              {[
+                { agents: ["بيليه", "معمار القصة", "وكيل المخرج", "المخرج السينمائي التقني", "السرد العاطفي", "الناقد الفني", "مصمم اللوحة", "مخرج البرومبت", "منسق النماذج", "StoryboardToVision"], tier: "pro", primary: "gemini-2.5-pro", fallback: "qwen-max", color: "border-primary/30 bg-primary/5 text-primary" },
+                { agents: ["مدقق الصدق", "CAEOS", "NEXUS", "التصيير", "التجميع", "ما بعد الإنتاج", "تحليل المشاهد", "الصوت والموسيقى", "ACIS Master"], tier: "flash", primary: "gemini-2.5-flash", fallback: "qwen-plus", color: "border-emerald-500/30 bg-emerald-500/5 text-emerald-400" },
+              ].map(g => (
+                <div key={g.tier} className={`p-3 rounded border ${g.color} space-y-2`}>
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold capitalize">{g.tier === "pro" ? "⚡ Pro Tier" : "🚀 Flash Tier"}</span>
+                    <span className="font-mono text-[10px] opacity-70">{g.primary} → {g.fallback}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {g.agents.map(a => (
+                      <span key={a} className="text-[10px] px-1.5 py-0.5 rounded bg-background/40 border border-current/20">{a}</span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </div>
+      )}
 
       {/* ── AI Settings ── */}
       {tab === "ai" && (

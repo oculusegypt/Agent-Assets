@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { agentsTable, agentExecutionsTable, activityTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { callAI, getAgentSystemPrompt, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
+import { callAI, getAgentSystemPrompt, getAgentTier, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
 
 const router = Router();
 
@@ -50,12 +50,7 @@ router.post("/:agentId/execute", async (req, res) => {
       ? `المهمة: ${action}\n\nالتفاصيل: ${prompt}`
       : `نفّذ المهمة التالية بدقة واحترافية عالية: ${action}`;
 
-    const tierMap: Record<string, "pro" | "flash"> = {
-      "story-architect": "pro", "director-agent": "pro", "cinematic-director": "pro",
-      "emotional-narrative": "pro", "critic-agent": "pro", "honesty-auditor": "flash",
-      "billie": "pro", "caeos-master": "flash", "nexus-master": "flash",
-    };
-    const tier = tierMap[agentId] ?? "flash";
+    const tier = getAgentTier(agentId);
     const aiRes = await callAI(systemPrompt, userMessage, tier);
     const result = aiRes.text;
     const tokenCount = aiRes.tokens;

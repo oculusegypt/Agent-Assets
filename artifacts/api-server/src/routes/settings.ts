@@ -96,13 +96,51 @@ router.post("/reset", async (_req, res) => {
   res.json({ success: true, message: "تمت إعادة ضبط جميع الإعدادات للقيم الافتراضية" });
 });
 
+router.get("/api-keys", async (_req, res) => {
+  const { getKeyStatus } = await import("../lib/ai.js");
+  const status = await getKeyStatus();
+  res.json(status);
+});
+
+router.put("/api-keys", async (req, res) => {
+  const { gemini, alibaba } = req.body as { gemini?: string; alibaba?: string };
+  const saved: string[] = [];
+
+  if (gemini !== undefined) {
+    if (gemini.trim()) {
+      await db.insert(systemSettingsTable)
+        .values({ key: "api_key.gemini", value: gemini.trim(), category: "api_keys", description: "Gemini API Key (stored in DB)" })
+        .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: gemini.trim(), updated_at: new Date() } });
+      saved.push("gemini");
+    } else {
+      await db.delete(systemSettingsTable).where(eq(systemSettingsTable.key, "api_key.gemini"));
+      saved.push("gemini (cleared)");
+    }
+  }
+
+  if (alibaba !== undefined) {
+    if (alibaba.trim()) {
+      await db.insert(systemSettingsTable)
+        .values({ key: "api_key.alibaba", value: alibaba.trim(), category: "api_keys", description: "Alibaba API Key (stored in DB)" })
+        .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: alibaba.trim(), updated_at: new Date() } });
+      saved.push("alibaba");
+    } else {
+      await db.delete(systemSettingsTable).where(eq(systemSettingsTable.key, "api_key.alibaba"));
+      saved.push("alibaba (cleared)");
+    }
+  }
+
+  res.json({ success: true, saved });
+});
+
 router.post("/test-ai", async (req, res) => {
   const { provider } = req.body;
   const start = Date.now();
+  const { getGeminiKey, getAlibabaKey } = await import("../lib/ai.js");
 
   if (provider === "gemini") {
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) return res.json({ success: false, error: "GEMINI_API_KEY غير مضبوط", latency_ms: 0 });
+    const key = await getGeminiKey();
+    if (!key) return res.json({ success: false, error: "GEMINI_API_KEY غير مضبوط في البيئة أو قاعدة البيانات", latency_ms: 0 });
     try {
       const g = new GoogleGenerativeAI(key);
       const m = g.getGenerativeModel({ model: "gemini-2.5-flash" });
@@ -115,8 +153,8 @@ router.post("/test-ai", async (req, res) => {
   }
 
   if (provider === "qwen") {
-    const key = process.env.ALIBABA_API_KEY;
-    if (!key) return res.json({ success: false, error: "ALIBABA_API_KEY غير مضبوط", latency_ms: 0 });
+    const key = await getAlibabaKey();
+    if (!key) return res.json({ success: false, error: "ALIBABA_API_KEY غير مضبوط في البيئة أو قاعدة البيانات", latency_ms: 0 });
     try {
       const q = new OpenAI({ apiKey: key, baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1" });
       const r = await q.chat.completions.create({ model: "qwen-turbo", messages: [{ role: "user", content: "قل: متصل" }], max_tokens: 20 });
@@ -127,7 +165,7 @@ router.post("/test-ai", async (req, res) => {
     }
   }
 
-  res.status(400).json({ error: "مزود غير مدعوم. استخدم: gemini أو qwen" });
+  res.status(400).json({ error: "مزود غير مدعوع. استخدم: gemini أو qwen" });
 });
 
 router.get("/db-stats", async (_req, res) => {
