@@ -13,11 +13,66 @@ import {
   Play, Plus, CheckCircle2, Clock, Zap, ChevronLeft, ChevronDown, ChevronUp,
   Star, Cpu, X, FileText, RefreshCw, Trash2, ListVideo, Copy, Check,
   Users, BookOpen, Camera, Headphones, Wand2, AlignLeft, Layers, LayoutList,
-  VolumeX, Volume2, Sparkles, Hash, GitMerge, Cog,
+  VolumeX, Volume2, Sparkles, Hash, GitMerge, Cog, Download,
 } from "lucide-react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 
 const API_BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") + "/api";
+
+// ── Media Player Components ────────────────────────────────────────────────
+
+function AudioPlayer({ outputUrl, phase }: { outputUrl: string; phase?: string }) {
+  const audioSrc = `${API_BASE}/media/${outputUrl}`;
+  const tc = colorClass(phase || "audio", "text");
+  const bc = colorClass(phase || "audio", "bg");
+  const bdc = colorClass(phase || "audio", "border");
+
+  return (
+    <div className={`flex flex-col gap-2 p-3 rounded-xl border ${bdc} ${bc} mt-3`} dir="rtl">
+      <div className="flex items-center justify-between">
+        <a href={audioSrc} download={outputUrl}
+          className={`flex items-center gap-1.5 text-[10px] font-mono ${tc} hover:opacity-70 transition-opacity`}>
+          <Download size={10} />تحميل WAV
+        </a>
+        <div className={`flex items-center gap-1.5 text-xs font-bold ${tc}`}>
+          <Volume2 size={13} />التعليق الصوتي المُولَّد
+        </div>
+      </div>
+      <audio src={audioSrc} controls className="w-full h-9 rounded-lg"
+        style={{ colorScheme: "dark" }} preload="metadata" />
+    </div>
+  );
+}
+
+function VideoPlayer({ outputUrl }: { outputUrl: string }) {
+  const videoSrc = `${API_BASE}/media/${outputUrl}`;
+  return (
+    <div className="flex flex-col gap-2 mt-3 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3" dir="rtl">
+      <div className="flex items-center justify-between mb-1">
+        <a href={videoSrc} download={outputUrl}
+          className="flex items-center gap-1.5 text-[10px] font-mono text-amber-400 hover:opacity-70 transition-opacity">
+          <Download size={10} />تحميل MP4
+        </a>
+        <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
+          <Film size={13} />الفيديو التجميعي النهائي
+        </div>
+      </div>
+      <video
+        src={videoSrc}
+        controls
+        className="w-full rounded-xl bg-black"
+        style={{ maxHeight: "360px" }}
+        preload="metadata"
+      />
+    </div>
+  );
+}
+
+function MediaOutput({ outputUrl, phase }: { outputUrl: string; phase?: string }) {
+  if (outputUrl.endsWith(".mp4")) return <VideoPlayer outputUrl={outputUrl} />;
+  return <AudioPlayer outputUrl={outputUrl} phase={phase} />;
+}
+
 
 const PHASE_LABELS    = ["السيناريو", "اللوحة المصورة", "التمثيل الصوتي", "توليد الصور", "توليد الفيديو", "الموسيقى", "التجميع"];
 const PHASE_ICONS     = [Clapperboard, Film, Mic, Image, Video, Music, Zap];
@@ -311,13 +366,16 @@ function JobResultPanel({ jobId, onClose }: { jobId: string; onClose: () => void
               </div>
             </div>
           ) : job?.result ? (
-            rawView ? (
-              <pre className="text-xs leading-loose whitespace-pre-wrap text-foreground/75 font-mono text-right" dir="rtl" lang="ar">
-                {job.result}
-              </pre>
-            ) : (
-              <RichContent text={job.result} phase={phase} />
-            )
+            <>
+              {rawView ? (
+                <pre className="text-xs leading-loose whitespace-pre-wrap text-foreground/75 font-mono text-right" dir="rtl" lang="ar">
+                  {job.result}
+                </pre>
+              ) : (
+                <RichContent text={job.result} phase={phase} />
+              )}
+              {job.output_url && <MediaOutput outputUrl={job.output_url} phase={phase} />}
+            </>
           ) : (
             <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
               <div className="w-14 h-14 rounded-2xl bg-secondary border border-border/30 flex items-center justify-center">
@@ -385,6 +443,11 @@ function InlineJobResult({ jobId, phase }: { jobId: string; phase?: string }) {
 
   return (
     <div className={`mt-2 rounded-lg border ${bdc} overflow-hidden`}>
+      {job.output_url && (
+        <div className={`px-3 pt-2 pb-1 ${bc}`}>
+          <MediaOutput outputUrl={job.output_url} phase={p} />
+        </div>
+      )}
       <div className={`flex items-center justify-between px-3 py-1.5 ${bc} border-b ${bdc}`}>
         <div className="flex items-center gap-2">
           <button onClick={handleCopy}

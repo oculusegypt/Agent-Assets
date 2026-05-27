@@ -3,8 +3,10 @@ import { db } from "@workspace/db";
 import { projectsTable, generationJobsTable, activityTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { callAIForTask, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
+import { callAIForTask, callGeminiTTS, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
 import { broadcast } from "../lib/ws.js";
+import { saveTtsAudio, extractTtsScript } from "../lib/media.js";
+import { buildCompilationVideo, extractScenes } from "../lib/video.js";
 
 const router = Router();
 
@@ -235,11 +237,29 @@ router.post("/projects/:projectId/generate", async (req, res) => {
 
 قدّم:
 1. الثيم الصوتي الرئيسي (نوع الصوت، المزاج، الآلات)
-2. مواصفات التعليق الصوتي لـ Kokoro TTS
-3. نص التعليق الصوتي المقترح
+2. مواصفات التعليق الصوتي
+3. نص التعليق الصوتي المقترح (مناسب للقراءة بصوت عالٍ، 3-5 جمل)
 4. توجيهات المؤثرات الصوتية لكل مشهد`
         );
         aiResult = r.text;
+
+        // ── توليد الصوت الفعلي عبر Gemini TTS ──
+        try {
+          const ttsScript = extractTtsScript(aiResult, 550);
+          console.log(`[TTS] بدء توليد الصوت (${ttsScript.length} حرف)…`);
+          const ttsResult = await callGeminiTTS(ttsScript, "Charon");
+          if (ttsResult?.audioData) {
+            const filename = saveTtsAudio(jobId, ttsResult.audioData, ttsResult.mimeType);
+            await db.update(generationJobsTable).set({
+              output_url: filename,
+            }).where(eq(generationJobsTable.id, jobId));
+            console.log(`[TTS] ✓ ملف الصوت محفوظ: ${filename}`);
+          } else {
+            console.warn("[TTS] لم يُعَد صوت من Gemini TTS");
+          }
+        } catch (ttsErr: any) {
+          console.warn("[TTS] تحذير: فشل توليد الصوت (غير قاطع):", ttsErr?.message?.slice(0, 100));
+        }
       } else if (safePhase === "music") {
         const r = await callAIForTask(
           "text_complex",
@@ -256,21 +276,87 @@ router.post("/projects/:projectId/generate", async (req, res) => {
         );
         aiResult = r.text;
       } else if (safePhase === "assembly") {
-        const r = await callAIForTask(
-          "text_simple",
-          AGENT_SYSTEM_PROMPTS["timeline-assembly"],
-          `نسّق الجدول الزمني النهائي للمشروع "${title}":
-القصة: ${story}
-المدة: ${dur} ثانية
+        // ── تحميل كل نتائج المراحل السابقة ──────────────────────────────
+        const allJobs = await db.select().from(generationJobsTable)
+          .where(eq(generationJobsTable.project_id, projectId))
+          .orderBy(desc(generationJobsTable.completed_at));
 
-قدّم:
-1. جدول المونتاج التفصيلي (توقيت كل مشهد)
-2. نقاط القطع والانتقالات المقترحة
-3. ترتيب الأصول الصوتية والمرئية
-4. ملاحظات ما بعد الإنتاج
-5. قائمة التسليم النهائية`
+        const phaseOrder = ["script", "storyboard", "audio", "images", "music", "video"];
+        const jobsByPhase: Record<string, typeof allJobs[0]> = {};
+        for (const j of allJobs) {
+          if (j.status === "completed" && j.phase && !jobsByPhase[j.phase]) {
+            jobsByPhase[j.phase] = j;
+          }
+        }
+
+        const phaseContextParts: string[] = [];
+        for (const ph of phaseOrder) {
+          const j = jobsByPhase[ph];
+          if (j?.result) {
+            const phaseLabel: Record<string, string> = {
+              script: "السيناريو", storyboard: "اللوحة المصورة", audio: "المشهد الصوتي",
+              images: "برومبت الصور", music: "الهوية الموسيقية", video: "برومبت الفيديو",
+            };
+            phaseContextParts.push(
+              `═══ ${phaseLabel[ph] || ph} ═══\n${j.result.slice(0, 1200)}`
+            );
+          }
+        }
+
+        const r = await callAIForTask(
+          "text_complex",
+          AGENT_SYSTEM_PROMPTS["timeline-assembly"],
+          `أنت منسق التجميع النهائي للمشروع السينمائي "${title}".
+لديك مخرجات جميع مراحل الإنتاج كاملة. نسّق وثيقة التجميع الشاملة.
+
+المعطيات:
+- القصة: ${story}
+- المدة: ${dur} ثانية
+- النوع: ${projType}
+
+${phaseContextParts.length > 0 ? `مخرجات المراحل المكتملة:\n\n${phaseContextParts.join("\n\n")}` : "لا توجد مراحل مكتملة بعد"}
+
+قدّم وثيقة التجميع الشاملة التالية:
+1. جدول المونتاج التفصيلي مع توقيت كل مشهد بالثواني
+2. قائمة المشاهد (مشهد 1، مشهد 2...) مع وصف موجز لكل منها
+3. توجيهات دمج الصوت مع المرئي (نقاط البداية والنهاية)
+4. انتقالات المونتاج المقترحة
+5. ملاحظات ما بعد الإنتاج النهائية
+6. قائمة التسليم الكاملة`
         );
         aiResult = r.text;
+
+        // ── توليد الفيديو التجميعي بـ ffmpeg ─────────────────────────────
+        try {
+          // إيجاد ملف الصوت من مرحلة الصوت
+          const audioJob = jobsByPhase["audio"];
+          const audioFilename = audioJob?.output_url || undefined;
+
+          // استخراج المشاهد من السيناريو واللوحة المصورة
+          const textsForScenes: Record<string, string> = {};
+          if (jobsByPhase["storyboard"]?.result) textsForScenes.storyboard = jobsByPhase["storyboard"].result;
+          if (jobsByPhase["script"]?.result)     textsForScenes.script     = jobsByPhase["script"].result;
+          textsForScenes.assembly = aiResult;
+
+          const scenes = extractScenes(textsForScenes, dur);
+
+          console.log(`[VIDEO] بدء توليد الفيديو النهائي — ${scenes.length} مشاهد، صوت: ${audioFilename || "لا"}`);
+
+          const videoFilename = await buildCompilationVideo({
+            jobId,
+            projectTitle: title,
+            totalDuration: dur,
+            scenes,
+            audioFilename,
+          });
+
+          await db.update(generationJobsTable).set({ output_url: videoFilename })
+            .where(eq(generationJobsTable.id, jobId));
+
+          console.log(`[VIDEO] ✓ تم توليد الفيديو: ${videoFilename}`);
+        } catch (videoErr: any) {
+          console.warn("[VIDEO] تحذير: فشل توليد الفيديو (غير قاطع):", videoErr?.message?.slice(0, 150));
+        }
       } else {
         const r = await callAIForTask(
           "orchestration",
@@ -315,6 +401,20 @@ router.delete("/projects/:projectId", async (req, res) => {
 
   broadcast("project_updated");
   res.json({ success: true });
+});
+
+// ── TTS on-demand ──────────────────────────────────────────────────────────
+router.post("/tts", async (req, res) => {
+  const { text } = req.body as { text?: string };
+  if (!text?.trim()) return res.status(400).json({ error: "text مطلوب" });
+
+  const { extractTtsScript, saveTtsAudio } = await import("../lib/media.js");
+  const script = extractTtsScript(text, 550);
+  const ttsResult = await callGeminiTTS(script, "Charon");
+  if (!ttsResult?.audioData) return res.status(502).json({ error: "فشل توليد الصوت من Gemini TTS" });
+
+  const filename = saveTtsAudio(`tts-${randomUUID()}`, ttsResult.audioData, ttsResult.mimeType);
+  res.json({ filename });
 });
 
 router.post("/recover-stuck-jobs", async (_req, res) => {

@@ -8,10 +8,55 @@ import {
   Archive, Search, Download, FileText, Clapperboard, Headphones,
   Image, Video, Music, Zap, GitMerge, RefreshCw, X, Copy, Check,
   Filter, SortDesc, Sparkles, Clock, ChevronDown, ChevronUp, BookOpen,
-  LayoutList, Camera, Layers, Wand2, AlignLeft, Volume2, Mic, Cog,
+  LayoutList, Camera, Layers, Wand2, AlignLeft, Volume2, Mic, Cog, Film,
 } from "lucide-react";
 
 const API_BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") + "/api";
+
+// ── Media Players ─────────────────────────────────────────────────────────
+
+function AudioPlayer({ outputUrl, meta }: { outputUrl: string; meta: any }) {
+  const src = `${API_BASE}/media/${outputUrl}`;
+  return (
+    <div className={`flex flex-col gap-2 p-3 rounded-xl border ${meta.borderCls} ${meta.bgCls} mb-3`} dir="rtl">
+      <div className="flex items-center justify-between">
+        <a href={src} download={outputUrl}
+          className={`flex items-center gap-1.5 text-[10px] font-mono ${meta.textCls} hover:opacity-70`}>
+          <Download size={10} />تحميل WAV
+        </a>
+        <div className={`flex items-center gap-1.5 text-xs font-bold ${meta.textCls}`}>
+          <Volume2 size={13} />التعليق الصوتي المُولَّد
+        </div>
+      </div>
+      <audio src={src} controls className="w-full h-9 rounded-lg"
+        style={{ colorScheme: "dark" }} preload="metadata" />
+    </div>
+  );
+}
+
+function VideoPlayer({ outputUrl }: { outputUrl: string }) {
+  const src = `${API_BASE}/media/${outputUrl}`;
+  return (
+    <div className="flex flex-col gap-2 p-3 rounded-xl border border-amber-500/40 bg-amber-500/5 mb-3" dir="rtl">
+      <div className="flex items-center justify-between mb-1">
+        <a href={src} download={outputUrl}
+          className="flex items-center gap-1.5 text-[10px] font-mono text-amber-400 hover:opacity-70">
+          <Download size={10} />تحميل MP4
+        </a>
+        <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
+          <Film size={13} />الفيديو التجميعي النهائي
+        </div>
+      </div>
+      <video src={src} controls className="w-full rounded-xl bg-black"
+        style={{ maxHeight: "320px" }} preload="metadata" />
+    </div>
+  );
+}
+
+function MediaOutput({ outputUrl, meta }: { outputUrl: string; meta: any }) {
+  if (outputUrl.endsWith(".mp4")) return <VideoPlayer outputUrl={outputUrl} />;
+  return <AudioPlayer outputUrl={outputUrl} meta={meta} />;
+}
 
 // ── Phase metadata ─────────────────────────────────────────────────────────
 
@@ -174,6 +219,7 @@ function ResultCard({ job, onView }: { job: any; onView: () => void }) {
 
       {/* Preview content */}
       <div className="p-4">
+        {job.output_url && <MediaOutput outputUrl={job.output_url} meta={meta} />}
         {!expanded ? (
           <div className="space-y-2">
             {sections.slice(0, 2).map((sec, i) => (
@@ -247,6 +293,7 @@ function FullResultModal({ job, onClose }: { job: any; onClose: () => void }) {
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-5 min-h-0">
+          {job.output_url && <MediaOutput outputUrl={job.output_url} meta={meta} />}
           {rawView
             ? <pre className="text-xs leading-loose whitespace-pre-wrap text-foreground/75 font-mono text-right" dir="rtl">{job.result}</pre>
             : <RichContent text={job.result || ""} phase={job.phase} />}

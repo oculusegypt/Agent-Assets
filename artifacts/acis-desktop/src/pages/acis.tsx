@@ -11,7 +11,7 @@ import {
   BarChart3, GitBranch, X, ChevronUp, ChevronDown,
   Plus, Minus, Sparkles, ArrowRight, Brain, Timer,
   ChevronDown as ExpandIcon, ChevronRight as CollapseIcon,
-  Loader2, Trophy, Coins,
+  Loader2, Trophy, Coins, Volume2, Download,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -55,6 +55,8 @@ type StepState = {
   model?:     string;
   duration_ms?: number;
   expanded:   boolean;
+  audioFile?:   string;
+  ttsLoading?:  boolean;
 };
 
 /* ─── Pipeline Studio ────────────────────────────────────────── */
@@ -110,6 +112,27 @@ function PipelineStudio({ agents }: { agents: any[] }) {
 
   function toggleExpand(idx: number) {
     setSteps(prev => prev.map((s, i) => i === idx ? { ...s, expanded: !s.expanded } : s));
+  }
+
+  async function generateStepTts(idx: number) {
+    const step = steps[idx];
+    if (!step?.result || step.ttsLoading || step.audioFile) return;
+    setSteps(prev => prev.map((s, i) => i === idx ? { ...s, ttsLoading: true } : s));
+    try {
+      const resp = await fetch(getApiUrl("api/production/tts"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: step.result }),
+      });
+      const data = await resp.json() as { filename?: string; error?: string };
+      if (data.filename) {
+        setSteps(prev => prev.map((s, i) => i === idx ? { ...s, audioFile: data.filename, ttsLoading: false } : s));
+      } else {
+        setSteps(prev => prev.map((s, i) => i === idx ? { ...s, ttsLoading: false } : s));
+      }
+    } catch {
+      setSteps(prev => prev.map((s, i) => i === idx ? { ...s, ttsLoading: false } : s));
+    }
   }
 
   function abort() {
@@ -472,6 +495,23 @@ function PipelineStudio({ agents }: { agents: any[] }) {
                   {/* Result content */}
                   {step.expanded && step.result && (
                     <div className="px-4 pb-4 border-t border-border/20 pt-3 space-y-2">
+                      {/* Audio player */}
+                      {step.audioFile && (
+                        <div className="flex flex-col gap-1.5 p-2.5 rounded-lg border border-emerald-500/30 bg-emerald-500/5 mb-2" dir="rtl">
+                          <div className="flex items-center justify-between">
+                            <a href={`${BASE_URL}/api/media/${step.audioFile}`} download={step.audioFile}
+                              className="flex items-center gap-1 text-[10px] font-mono text-emerald-400 hover:opacity-70">
+                              <Download size={9} /> WAV
+                            </a>
+                            <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-400">
+                              <Volume2 size={11} /> صوت مُولَّد
+                            </div>
+                          </div>
+                          <audio src={`${BASE_URL}/api/media/${step.audioFile}`} controls
+                            className="w-full h-8 rounded" style={{ colorScheme: "dark" }} preload="metadata" />
+                        </div>
+                      )}
+
                       <div className="text-sm text-foreground/85 whitespace-pre-wrap leading-7 max-h-72 overflow-y-auto" dir="rtl">
                         {step.result}
                       </div>
@@ -481,6 +521,16 @@ function PipelineStudio({ agents }: { agents: any[] }) {
                           className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground hover:text-primary px-2 py-1 rounded border border-border/30 hover:border-primary/30 hover:bg-primary/5 transition-colors">
                           <Brain size={10} /> نسخ النتيجة
                         </button>
+                        {!step.audioFile && (
+                          <button
+                            onClick={() => generateStepTts(idx)}
+                            disabled={step.ttsLoading}
+                            className="flex items-center gap-1 text-[10px] font-mono text-emerald-400 hover:text-emerald-300 px-2 py-1 rounded border border-emerald-500/30 hover:border-emerald-400/50 bg-emerald-500/5 hover:bg-emerald-500/10 transition-colors disabled:opacity-50">
+                            {step.ttsLoading
+                              ? <><Loader2 size={10} className="animate-spin" /> جارٍ التوليد…</>
+                              : <><Volume2 size={10} /> توليد صوت</>}
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
