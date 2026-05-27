@@ -305,6 +305,35 @@ router.post("/projects/:projectId/generate", async (req, res) => {
   });
 });
 
+router.delete("/projects/:projectId", async (req, res) => {
+  const { projectId } = req.params;
+  const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, projectId));
+  if (!project) return res.status(404).json({ error: "المشروع غير موجود" });
+
+  await db.delete(generationJobsTable).where(eq(generationJobsTable.project_id, projectId));
+  await db.delete(projectsTable).where(eq(projectsTable.id, projectId));
+
+  broadcast("project_updated");
+  res.json({ success: true });
+});
+
+router.post("/recover-stuck-jobs", async (_req, res) => {
+  const cutoff = new Date(Date.now() - 10 * 60 * 1000);
+  const stuck = await db.select().from(generationJobsTable)
+    .where(eq(generationJobsTable.status, "running"));
+  const staleJobs = stuck.filter(j => j.started_at && j.started_at < cutoff);
+
+  for (const job of staleJobs) {
+    await db.update(generationJobsTable).set({
+      status: "failed",
+      result: "انتهت مهلة التوليد — أُعيد تشغيل الخادم أثناء التنفيذ",
+      completed_at: new Date(),
+    } as any).where(eq(generationJobsTable.id, job.id));
+  }
+
+  res.json({ recovered: staleJobs.length });
+});
+
 router.get("/models", (_req, res) => {
   const models = AI_MODELS.map(m => ({
     ...m,

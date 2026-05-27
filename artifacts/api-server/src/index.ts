@@ -25,12 +25,15 @@ server.listen(port, (err?: Error) => {
   }
   logger.info({ port }, "Server listening");
 
-  // Auto-seed agents and default settings on every startup
+  // Auto-seed agents, recover stuck jobs, and load default settings on every startup
   setImmediate(async () => {
     try {
       await fetch(`http://localhost:${port}/api/system/seed-agents`, { method: "POST" });
-      await fetch(`http://localhost:${port}/api/settings`, { method: "GET" }); // triggers ensureDefaults
-      logger.info("Auto-seed completed: agents + settings");
+      await fetch(`http://localhost:${port}/api/settings`, { method: "GET" });
+      const recovered = await fetch(`http://localhost:${port}/api/production/recover-stuck-jobs`, { method: "POST" });
+      const recData = await recovered.json() as { recovered: number };
+      if (recData.recovered > 0) logger.warn({ recovered: recData.recovered }, "Recovered stuck jobs");
+      logger.info("Auto-seed completed: agents + settings + job recovery");
     } catch (e: any) {
       logger.warn({ err: e?.message }, "Auto-seed warning (non-fatal)");
     }

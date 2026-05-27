@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   useListProjects, useListModels, useCreateProject, useGenerateProduction,
 } from "@workspace/api-client-react";
@@ -11,9 +11,11 @@ import { Input } from "@/components/ui/input";
 import {
   Film, Clapperboard, Image, Music, Mic, Video,
   Play, Plus, CheckCircle2, Clock, Zap, ChevronLeft,
-  Star, Cpu, X, FileText, RefreshCw,
+  Star, Cpu, X, FileText, RefreshCw, Trash2, ListVideo,
 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
+
+const API_BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") + "/api";
 
 const PHASE_LABELS    = ["السيناريو", "اللوحة المصورة", "التمثيل الصوتي", "توليد الصور", "توليد الفيديو", "الموسيقى", "التجميع"];
 const PHASE_ICONS     = [Clapperboard, Film, Mic, Image, Video, Music, Zap];
@@ -37,8 +39,25 @@ const MODEL_TYPE_ICONS: Record<string, any> = {
   video: Video, image: Image, audio: Music, tts: Mic, music: Music, language: Zap,
 };
 
+const ALL_PHASES = [
+  { type: "script",     label: "السيناريو",                  icon: FileText },
+  { type: "storyboard", label: "اللوحة المصورة + برومبت",   icon: Clapperboard },
+  { type: "audio",      label: "تصميم المشهد الصوتي",       icon: Mic },
+  { type: "images",     label: "برومبت الصور (FLUX)",        icon: Image },
+  { type: "video",      label: "برومبت الفيديو (Wan)",       icon: Video },
+  { type: "music",      label: "الهوية الموسيقية",           icon: Music },
+  { type: "assembly",   label: "جدول المونتاج النهائي",     icon: Zap },
+];
+
 function JobResultViewer({ jobId, onClose }: { jobId: string; onClose: () => void }) {
-  const { data: job, isLoading } = useGetGenerationJob(jobId);
+  const { data: job, isLoading, refetch } = useGetGenerationJob(jobId);
+
+  // Auto-poll while running
+  useEffect(() => {
+    if (job?.status !== "running") return;
+    const interval = setInterval(() => refetch(), 3000);
+    return () => clearInterval(interval);
+  }, [job?.status, refetch]);
 
   const phaseNameAr: Record<string, string> = {
     script: "السيناريو", storyboard: "اللوحة المصورة",
@@ -46,18 +65,30 @@ function JobResultViewer({ jobId, onClose }: { jobId: string; onClose: () => voi
     images: "الصور", video: "الفيديو",
   };
 
+  const handleCopy = () => {
+    if (job?.result) navigator.clipboard?.writeText(job.result);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm" dir="rtl">
       <div className="bg-card border border-purple-500/30 rounded-lg w-full max-w-3xl max-h-[85vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-border/50">
-          <button onClick={onClose} className="p-1 hover:bg-secondary rounded"><X size={16} /></button>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="p-1 hover:bg-secondary rounded"><X size={16} /></button>
+            {job?.result && (
+              <button onClick={handleCopy}
+                className="text-[10px] font-mono text-muted-foreground hover:text-purple-400 px-2 py-1 rounded border border-border/30 hover:border-purple-500/30 transition-colors">
+                نسخ النتيجة
+              </button>
+            )}
+          </div>
           <div className="text-right">
             <h3 className="font-bold">نتيجة التوليد الذكي</h3>
             {job && (
               <p className="text-xs text-muted-foreground font-mono">
                 {phaseNameAr[job.phase] || job.phase} · {job.model_used} ·
                 <span className={job.status === "completed" ? " text-emerald-400" : job.status === "failed" ? " text-red-400" : " text-amber-400"}>
-                  {job.status === "completed" ? " مكتمل" : job.status === "failed" ? " فشل" : " جارٍ…"}
+                  {job.status === "completed" ? " مكتمل ✓" : job.status === "failed" ? " فشل ✗" : " جارٍ…"}
                 </span>
               </p>
             )}
@@ -73,7 +104,7 @@ function JobResultViewer({ jobId, onClose }: { jobId: string; onClose: () => voi
           {job?.status === "running" && !job?.result && (
             <div className="text-center py-8 text-amber-400">
               <RefreshCw size={24} className="mx-auto mb-2 animate-spin" />
-              <p className="text-sm font-mono">الذكاء الاصطناعي يعمل… يرجى الانتظار</p>
+              <p className="text-sm font-mono">الذكاء الاصطناعي يعمل… يتم التحديث تلقائياً</p>
               <p className="text-xs text-muted-foreground mt-1">الوقت المتوقع: {job.estimated_seconds}ث</p>
             </div>
           )}
@@ -84,7 +115,7 @@ function JobResultViewer({ jobId, onClose }: { jobId: string; onClose: () => voi
           )}
           {job?.status === "failed" && !job?.result && (
             <div className="text-red-400 text-sm p-3 border border-red-400/20 rounded bg-red-400/5">
-              فشل التوليد — تحقق من مفاتيح API
+              فشل التوليد — تحقق من مفاتيح API في الإعدادات
             </div>
           )}
         </div>
@@ -103,12 +134,36 @@ export default function ProductionPage() {
   const [tab, setTab] = useState<"projects" | "models" | "new">("projects");
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [runningAll, setRunningAll] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [showJobModal, setShowJobModal] = useState(false);
   const [form, setForm] = useState({ title: "", story_prompt: "", language: "ar", type: "short", duration_seconds: 90 });
 
-  const { data: projectJobs } = useGetProjectJobs(selectedProject);
+  const { data: projectJobs, refetch: refetchJobs } = useGetProjectJobs(selectedProject);
   const projectData = projects?.find(p => p.id === selectedProject);
+
+  const deleteProject = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`${API_BASE}/production/projects/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("فشل الحذف");
+      return res.json();
+    },
+    onSuccess: (_d, id) => {
+      if (selectedProject === id) setSelectedProject(null);
+      qc.invalidateQueries();
+    },
+  });
+
+  // Auto-poll running jobs every 4s
+  const hasRunningJob = projectJobs?.some((j: any) => j.status === "running");
+  useEffect(() => {
+    if (!hasRunningJob) return;
+    const interval = setInterval(() => {
+      refetchJobs();
+      refetchProjects();
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [hasRunningJob, refetchJobs, refetchProjects]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -126,16 +181,41 @@ export default function ProductionPage() {
       if (res?.job_id) {
         setActiveJobId(res.job_id);
         setShowJobModal(true);
-        setTimeout(() => {
-          refetchProjects();
-          qc.invalidateQueries();
-        }, 3000);
+        setTimeout(() => { refetchProjects(); refetchJobs(); qc.invalidateQueries(); }, 2000);
       }
     } catch (e: any) {
       console.error(e);
     }
     setGenerating(false);
   }
+
+  const handleRunAll = useCallback(async () => {
+    if (!selectedProject || runningAll) return;
+    setRunningAll(true);
+    const phases = ["script", "storyboard", "audio", "images", "music", "assembly"];
+    for (const phase of phases) {
+      try {
+        const res = await generateProd.mutateAsync({ projectId: selectedProject, data: { type: phase } as any });
+        if (res?.job_id) {
+          // Wait for this phase to complete before starting next
+          let attempts = 0;
+          while (attempts < 60) {
+            await new Promise(r => setTimeout(r, 4000));
+            const jobRes = await fetch(`${API_BASE}/production/jobs/${res.job_id}`);
+            const job = await jobRes.json();
+            if (job.status === "completed" || job.status === "failed") break;
+            attempts++;
+          }
+        }
+        refetchJobs();
+        refetchProjects();
+      } catch (e) {
+        console.error(`فشل المرحلة: ${phase}`, e);
+      }
+    }
+    setRunningAll(false);
+    qc.invalidateQueries();
+  }, [selectedProject, runningAll, generateProd, refetchJobs, refetchProjects, qc]);
 
   const TABS = [
     { key: "projects", label: "المشاريع", icon: Film },
@@ -185,46 +265,55 @@ export default function ProductionPage() {
                 </Button>
               </div>
             ) : projects.map(p => (
-              <button key={p.id} onClick={() => setSelectedProject(p.id === selectedProject ? null : p.id)}
-                className={`w-full text-right p-5 rounded border transition-all ${selectedProject === p.id ? "border-purple-400/50 bg-purple-500/5" : "border-border/50 bg-card hover:border-purple-400/30"}`}>
-                <div className="flex items-start justify-between mb-3">
-                  <div className="text-right text-xs font-mono text-muted-foreground">
-                    <div>{p.assets_generated} أصول</div>
-                    <div>{p.scenes_count} مشهد</div>
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2 justify-end">
-                      {p.title_ar && <span className="font-bold" dir="rtl">{p.title_ar}</span>}
-                      {p.title !== p.title_ar && <span className="font-bold opacity-60">{p.title}</span>}
+              <div key={p.id} className="relative group">
+                <button onClick={() => setSelectedProject(p.id === selectedProject ? null : p.id)}
+                  className={`w-full text-right p-5 rounded border transition-all ${selectedProject === p.id ? "border-purple-400/50 bg-purple-500/5" : "border-border/50 bg-card hover:border-purple-400/30"}`}>
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="text-right text-xs font-mono text-muted-foreground">
+                      <div>{p.assets_generated} أصول</div>
+                      <div>{p.scenes_count} مشهد</div>
                     </div>
-                    <div className="flex items-center gap-2 mt-1 justify-end">
-                      <span className="text-xs text-muted-foreground font-mono">{p.language}</span>
-                      <span className="text-xs text-muted-foreground font-mono">{p.duration_seconds}ث</span>
-                      <Badge className={`text-xs font-mono ${STATUS_STYLES[p.status] ?? "bg-secondary text-muted-foreground border-border/50"}`}>
-                        {STATUS_AR[p.status] || p.status}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1 flex-row-reverse">
-                  {PHASE_LABELS.map((label, i) => {
-                    const done   = i < (p.phase ?? 0);
-                    const active = i === (p.phase ?? 0);
-                    const PhaseIcon = PHASE_ICONS[i];
-                    return (
-                      <div key={label} className="flex items-center gap-0.5">
-                        {i < PHASE_LABELS.length - 1 && <ChevronLeft size={8} className="text-muted-foreground/20" />}
-                        <div className={`flex items-center gap-1 px-1.5 py-1 rounded text-[10px] font-mono ${done ? "text-emerald-400 bg-emerald-400/10" : active ? "text-purple-400 bg-purple-500/10 animate-pulse" : "text-muted-foreground/40 bg-secondary/40"}`}>
-                          <PhaseIcon size={8} />
-                          <span className="hidden sm:inline">{label}</span>
-                        </div>
+                    <div>
+                      <div className="flex items-center gap-2 justify-end">
+                        {p.title_ar && <span className="font-bold" dir="rtl">{p.title_ar}</span>}
+                        {p.title !== p.title_ar && <span className="font-bold opacity-60">{p.title}</span>}
                       </div>
-                    );
-                  })}
-                </div>
-                <p className="text-xs text-muted-foreground mt-2 line-clamp-2 text-right">{p.story_prompt}</p>
-              </button>
+                      <div className="flex items-center gap-2 mt-1 justify-end">
+                        <span className="text-xs text-muted-foreground font-mono">{p.language}</span>
+                        <span className="text-xs text-muted-foreground font-mono">{p.duration_seconds}ث</span>
+                        <Badge className={`text-xs font-mono ${STATUS_STYLES[p.status] ?? "bg-secondary text-muted-foreground border-border/50"}`}>
+                          {STATUS_AR[p.status] || p.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 flex-row-reverse">
+                    {PHASE_LABELS.map((label, i) => {
+                      const done   = i < (p.phase ?? 0);
+                      const active = i === (p.phase ?? 0);
+                      const PhaseIcon = PHASE_ICONS[i];
+                      return (
+                        <div key={label} className="flex items-center gap-0.5">
+                          {i < PHASE_LABELS.length - 1 && <ChevronLeft size={8} className="text-muted-foreground/20" />}
+                          <div className={`flex items-center gap-1 px-1.5 py-1 rounded text-[10px] font-mono ${done ? "text-emerald-400 bg-emerald-400/10" : active ? "text-purple-400 bg-purple-500/10 animate-pulse" : "text-muted-foreground/40 bg-secondary/40"}`}>
+                            <PhaseIcon size={8} />
+                            <span className="hidden sm:inline">{label}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2 line-clamp-2 text-right">{p.story_prompt}</p>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm(`حذف مشروع "${p.title}" نهائياً؟`)) deleteProject.mutate(p.id);
+                  }}
+                  className="absolute left-3 top-3 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-red-500/10 hover:text-red-400 text-muted-foreground/40">
+                  <Trash2 size={13} />
+                </button>
+              </div>
             ))}
           </div>
 
@@ -237,24 +326,31 @@ export default function ProductionPage() {
                   <p className="text-xs text-muted-foreground text-right leading-relaxed border-r-2 border-purple-500/30 pr-2">
                     {projectData.story_prompt?.substring(0, 150)}{(projectData.story_prompt?.length ?? 0) > 150 ? "…" : ""}
                   </p>
-                  <div className="space-y-2 pt-1">
-                    {[
-                      { type: "script",     label: "توليد السيناريو",   icon: FileText,    note: "ذكاء اصطناعي" },
-                      { type: "storyboard", label: "توليد اللوحة المصورة + برومبت", icon: Clapperboard, note: "ذكاء اصطناعي" },
-                      { type: "audio",      label: "تصميم المشهد الصوتي", icon: Mic,       note: "ذكاء اصطناعي" },
-                      { type: "music",      label: "الهوية الموسيقية",   icon: Music,      note: "ذكاء اصطناعي" },
-                      { type: "assembly",   label: "جدول المونتاج",      icon: Zap,        note: "ذكاء اصطناعي" },
-                    ].map(action => (
+
+                  {/* Run All Phases */}
+                  <Button
+                    onClick={handleRunAll}
+                    disabled={runningAll || generating}
+                    className="w-full gap-2 bg-purple-500/20 border border-purple-500/40 hover:bg-purple-500/30 text-purple-300 text-xs h-9 justify-center">
+                    {runningAll
+                      ? <><RefreshCw size={13} className="animate-spin" /> جارٍ تشغيل جميع المراحل…</>
+                      : <><ListVideo size={13} /> تشغيل جميع المراحل تسلسلياً</>}
+                  </Button>
+
+                  <div className="text-[10px] font-mono text-muted-foreground text-center">— أو اختر مرحلة محددة —</div>
+
+                  <div className="space-y-2">
+                    {ALL_PHASES.map(action => (
                       <Button key={action.type} onClick={() => handleGenerate(projectData.id, action.type)}
-                        disabled={generating}
+                        disabled={generating || runningAll}
                         className="w-full gap-2 bg-secondary border border-border/50 hover:border-purple-400/30 hover:bg-purple-500/10 text-foreground justify-start text-xs h-9">
                         <action.icon size={13} className="text-purple-400 shrink-0" />
                         <span className="flex-1 text-right">{action.label}</span>
-                        <span className="text-[10px] text-purple-400/60 font-mono shrink-0">{action.note}</span>
+                        <span className="text-[10px] text-purple-400/60 font-mono shrink-0">ذكاء اصطناعي</span>
                       </Button>
                     ))}
                   </div>
-                  {generating && (
+                  {(generating || runningAll) && (
                     <div className="text-xs text-purple-400 font-mono text-center animate-pulse">
                       الذكاء الاصطناعي يعمل…
                     </div>
@@ -263,8 +359,11 @@ export default function ProductionPage() {
 
                 {projectJobs && projectJobs.length > 0 && (
                   <div className="space-y-2">
-                    <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest">مهام التوليد</div>
-                    {projectJobs.slice(0, 6).map((job: any) => (
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest">مهام التوليد</div>
+                      {hasRunningJob && <div className="text-[10px] text-amber-400 font-mono animate-pulse">يتحدث تلقائياً…</div>}
+                    </div>
+                    {projectJobs.slice(0, 8).map((job: any) => (
                       <button key={job.id}
                         onClick={() => { setActiveJobId(job.id); setShowJobModal(true); }}
                         className="w-full p-2 rounded border border-border/40 bg-card hover:border-purple-400/30 text-right text-xs flex items-center justify-between gap-2">

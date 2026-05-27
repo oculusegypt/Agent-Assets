@@ -8,9 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   MessageSquare, Send, Plus, BrainCircuit,
-  User, Clock, Zap, X,
+  User, Clock, Zap, X, Trash2,
 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
+
+const API_BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") + "/api";
 
 const SYSTEM_COLORS: Record<string, string> = {
   billie:    "text-pink-400 border-pink-500/30 bg-pink-500/10",
@@ -41,15 +43,28 @@ export default function ConversationsPage() {
   const [sending, setSending] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [newAgentId, setNewAgentId] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { data: messages, isLoading: mLoad } = useListMessages(
     selectedConv!,
-    { query: { enabled: !!selectedConv } }
+    { query: { enabled: !!selectedConv, refetchInterval: sending ? 2000 : false } }
   );
 
   const selectedConvData = conversations?.find(c => c.id === selectedConv);
   const selectedAgent = agents?.find(a => a.id === selectedConvData?.agent_id);
+
+  const deleteConv = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`${API_BASE}/conversations/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("فشل الحذف");
+      return res.json();
+    },
+    onSuccess: (_data, id) => {
+      if (selectedConv === id) setSelectedConv(null);
+      qc.invalidateQueries();
+    },
+  });
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -121,22 +136,35 @@ export default function ConversationsPage() {
           ) : conversations?.map(conv => {
             const agent = agents?.find(a => a.id === conv.agent_id);
             const sysColor = SYSTEM_COLORS[agent?.system ?? ""] ?? "text-muted-foreground border-border/50 bg-secondary";
+            const isDeleting = deletingId === conv.id;
             return (
-              <button key={conv.id} onClick={() => setSelectedConv(conv.id)}
-                className={`w-full text-right p-3 rounded border transition-all ${
-                  selectedConv === conv.id
-                    ? "border-primary/40 bg-primary/5"
-                    : "border-border/50 bg-card hover:border-primary/20"
-                }`}>
-                <div className="flex items-center gap-2 mb-1">
-                  <div className={`w-6 h-6 rounded flex items-center justify-center shrink-0 ${sysColor}`}>
-                    {conv.agent_id === "billie" ? <BrainCircuit size={12} /> : <Zap size={12} />}
+              <div key={conv.id} className="group relative">
+                <button onClick={() => setSelectedConv(conv.id)}
+                  className={`w-full text-right p-3 rounded border transition-all ${
+                    selectedConv === conv.id
+                      ? "border-primary/40 bg-primary/5"
+                      : "border-border/50 bg-card hover:border-primary/20"
+                  }`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className={`w-6 h-6 rounded flex items-center justify-center shrink-0 ${sysColor}`}>
+                      {conv.agent_id === "billie" ? <BrainCircuit size={12} /> : <Zap size={12} />}
+                    </div>
+                    <span className="font-semibold text-xs truncate flex-1 text-right">{agent?.nameAr || conv.agent_name}</span>
+                    <span className="text-[10px] font-mono text-muted-foreground shrink-0">{conv.message_count}</span>
                   </div>
-                  <span className="font-semibold text-xs truncate flex-1 text-right">{agent?.nameAr || conv.agent_name}</span>
-                  <span className="text-[10px] font-mono text-muted-foreground shrink-0">{conv.message_count}</span>
-                </div>
-                <div className="text-[10px] text-muted-foreground truncate pr-8 text-right">{conv.title}</div>
-              </button>
+                  <div className="text-[10px] text-muted-foreground truncate pr-8 text-right">{conv.title}</div>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeletingId(conv.id);
+                    deleteConv.mutate(conv.id, { onSettled: () => setDeletingId(null) });
+                  }}
+                  disabled={isDeleting}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-red-500/10 hover:text-red-400 text-muted-foreground/50">
+                  {isDeleting ? <Clock size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                </button>
+              </div>
             );
           })}
           {!cLoad && !conversations?.length && (
@@ -167,7 +195,18 @@ export default function ConversationsPage() {
                 </div>
                 <div className="text-xs text-muted-foreground font-mono text-right">{selectedAgent?.model}</div>
               </div>
-              <div className="text-xs font-mono text-muted-foreground">{selectedConvData.message_count} رسالة</div>
+              <div className="flex items-center gap-3">
+                <div className="text-xs font-mono text-muted-foreground">{selectedConvData.message_count} رسالة</div>
+                <button
+                  onClick={() => {
+                    if (confirm("حذف هذه المحادثة نهائياً؟")) {
+                      deleteConv.mutate(selectedConv!);
+                    }
+                  }}
+                  className="p-1.5 rounded hover:bg-red-500/10 hover:text-red-400 text-muted-foreground/40 transition-colors">
+                  <Trash2 size={13} />
+                </button>
+              </div>
             </div>
 
             {/* Messages */}
@@ -196,13 +235,23 @@ export default function ConversationsPage() {
                       <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground">
                         <Clock size={8} />
                         <span>{new Date(msg.created_at).toLocaleTimeString("ar-SA")}</span>
-                        {msg.model_used && msg.model_used !== "error" && <span>· {msg.model_used}</span>}
+                        {msg.model_used && msg.model_used !== "error" && msg.model_used !== "خطأ" && <span>· {msg.model_used}</span>}
                         {msg.tokens_used && msg.tokens_used > 0 && <span>· {msg.tokens_used} رمز</span>}
                       </div>
                     </div>
                   </div>
                 );
               })}
+              {sending && (
+                <div className="flex gap-3 flex-row-reverse">
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center bg-primary/20 border border-primary/30 text-primary shrink-0">
+                    <BrainCircuit size={12} />
+                  </div>
+                  <div className="p-3 rounded bg-primary/10 border border-primary/20 text-muted-foreground text-sm animate-pulse">
+                    يكتب…
+                  </div>
+                </div>
+              )}
               {!mLoad && messages?.length === 0 && (
                 <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground py-12">
                   <BrainCircuit size={32} className="mb-3 opacity-20" />

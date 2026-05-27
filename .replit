@@ -37,3 +37,8 @@ externalPort = 3000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+ALIBABA_API_BASE = "https://ws-twcxat39x22mi7rg.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"

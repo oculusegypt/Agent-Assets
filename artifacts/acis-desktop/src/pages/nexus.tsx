@@ -205,7 +205,7 @@ export default function NexusPage() {
               <div key={task.id} className="p-4 rounded border border-border/50 bg-card hover:border-emerald-500/20 transition-colors">
                 <div className="flex items-start gap-3">
                   <div className="flex flex-col items-center gap-1 mt-0.5">
-                    <button onClick={() => handleDelete(task.id, event as any)}
+                    <button onClick={(e) => handleDelete(task.id, e)}
                       className="p-1 hover:bg-red-500/10 hover:text-red-400 rounded text-muted-foreground/50 transition-colors">
                       <Trash2 size={12} />
                     </button>

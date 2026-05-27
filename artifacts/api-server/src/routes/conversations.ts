@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { conversationsTable, messagesTable, agentsTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { callAIWithHistory, callAI, getAgentSystemPrompt } from "../lib/ai.js";
+import { callAIForTask, callAIWithHistory, getAgentSystemPrompt, getAgentTaskType } from "../lib/ai.js";
 import { broadcast } from "../lib/ws.js";
 
 const router = Router();
@@ -90,7 +90,8 @@ router.post("/:conversationId/messages", async (req, res) => {
 
   try {
     const systemPrompt = getAgentSystemPrompt(conv.agent_id, agent?.nameAr || conv.agent_name);
-    const result = await callAIWithHistory(systemPrompt, historyForAI, content, "flash");
+    const taskType = getAgentTaskType(conv.agent_id);
+    const result = await callAIForTask(taskType, systemPrompt, content, { history: historyForAI });
 
     const [response] = await db.insert(messagesTable).values({
       id: randomUUID(), conversation_id: conversationId, role: "assistant",
@@ -113,6 +114,18 @@ router.post("/:conversationId/messages", async (req, res) => {
     }).returning();
     res.json({ ...response, created_at: response.created_at?.toISOString() || new Date().toISOString() });
   }
+});
+
+router.delete("/:conversationId", async (req, res) => {
+  const { conversationId } = req.params;
+  const [conv] = await db.select().from(conversationsTable).where(eq(conversationsTable.id, conversationId));
+  if (!conv) return res.status(404).json({ error: "المحادثة غير موجودة" });
+
+  await db.delete(messagesTable).where(eq(messagesTable.conversation_id, conversationId));
+  await db.delete(conversationsTable).where(eq(conversationsTable.id, conversationId));
+
+  broadcast("conversation_deleted", { conversationId });
+  res.json({ success: true });
 });
 
 export default router;
