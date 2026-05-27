@@ -1,49 +1,105 @@
 import { useState } from "react";
-import { useListAgents } from "@workspace/api-client-react";
+import { useListAgents, useGetBillieAlerts, useGetSystemMetrics, useExecuteAgent } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Shield, Layers, GitBranch, Lock, Database, Network,
-  Cpu, Code2, AlertTriangle, CheckCircle2, Eye,
-  Scale, Wrench, Globe, Zap, Brain, Server,
+  Cpu, AlertTriangle, CheckCircle2, Eye,
+  Scale, Wrench, Globe, Zap, Brain, Server, Play, Clock, X,
 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 const SOVEREIGN_LAYERS = [
-  { id: 1, name: "Constitutional Framework", icon: Scale, color: "text-amber-400", desc: "Core ethical principles, rights, obligations, and governance charter governing all AI behavior." },
-  { id: 2, name: "Lexical Intelligence", icon: Brain, color: "text-purple-400", desc: "Advanced NLP, semantic understanding, multilingual processing (Arabic + English + 30+ langs)." },
-  { id: 3, name: "Epistemological Validator", icon: Eye, color: "text-sky-400", desc: "Fact-checking, source verification, knowledge validation against trusted corpora." },
-  { id: 4, name: "Ethical Reasoning Engine", icon: Shield, color: "text-emerald-400", desc: "Multi-framework ethical analysis: utilitarian, deontological, virtue, Islamic ethics integration." },
-  { id: 5, name: "Systemic Risk Assessor", icon: AlertTriangle, color: "text-orange-400", desc: "Real-time risk scoring, threat modeling, and cascading failure analysis across all operations." },
-  { id: 6, name: "Causal Inference Module", icon: GitBranch, color: "text-primary", desc: "Root cause analysis, counterfactual reasoning, and predictive causal chain modeling." },
-  { id: 7, name: "Security Enforcement Layer", icon: Lock, color: "text-red-400", desc: "Zero-trust security, prompt injection prevention, data sanitization, and access control." },
-  { id: 8, name: "Knowledge Architecture", icon: Database, color: "text-sky-400", desc: "Distributed knowledge graph, semantic indexing, cross-domain concept linking." },
-  { id: 9, name: "Coordination Protocol", icon: Network, color: "text-emerald-400", desc: "Multi-agent orchestration, consensus building, and conflict resolution between agents." },
-  { id: 10, name: "Adaptive Learning Core", icon: Cpu, color: "text-primary", desc: "Continuous improvement from feedback, performance optimization, model fine-tuning triggers." },
-  { id: 11, name: "Transparency Engine", icon: Eye, color: "text-purple-400", desc: "Explainability generation, audit trails, decision rationale, GDPR-compliant logging." },
-  { id: 12, name: "Compliance Monitor", icon: CheckCircle2, color: "text-amber-400", desc: "Regulatory compliance checking across GDPR, CCPA, AI Act, UAE AI ethics guidelines." },
-  { id: 13, name: "Resource Optimizer", icon: Wrench, color: "text-orange-400", desc: "Compute allocation, cost optimization, energy efficiency, and SLA management." },
-  { id: 14, name: "Cultural Intelligence", icon: Globe, color: "text-emerald-400", desc: "Cross-cultural communication, Arabic/Islamic context awareness, regional norm adaptation." },
-  { id: 15, name: "Evolution Controller", icon: Zap, color: "text-red-400", desc: "System self-improvement, architecture evolution proposals, version control for AI behaviors." },
+  { id: 1,  name: "الإطار الدستوري",          nameEn: "Constitutional Framework",  icon: Scale,         color: "text-amber-400",   desc: "المبادئ الأخلاقية الأساسية والحقوق والالتزامات وميثاق الحوكمة الذي يحكم جميع سلوكيات الذكاء الاصطناعي." },
+  { id: 2,  name: "الذكاء اللغوي",            nameEn: "Lexical Intelligence",       icon: Brain,         color: "text-purple-400",  desc: "معالجة متقدمة للغات الطبيعية مع فهم دلالي وإتقان 30+ لغة بما فيها العربية." },
+  { id: 3,  name: "مدقق المعرفة",            nameEn: "Epistemological Validator",  icon: Eye,           color: "text-sky-400",     desc: "التحقق من الحقائق والمصادر والتحقق من صحة المعرفة مقابل المرجعيات الموثوقة." },
+  { id: 4,  name: "محرك الاستدلال الأخلاقي", nameEn: "Ethical Reasoning Engine",   icon: Shield,        color: "text-emerald-400", desc: "تحليل أخلاقي متعدد الأطر: نفعي، واجبي، فضيلة، وتكامل الأخلاق الإسلامية." },
+  { id: 5,  name: "مُقيّم المخاطر النظامية", nameEn: "Systemic Risk Assessor",     icon: AlertTriangle, color: "text-orange-400",  desc: "تسجيل فوري للمخاطر ونمذجة التهديدات وتحليل الفشل المتتالي عبر جميع العمليات." },
+  { id: 6,  name: "وحدة الاستدلال السببي",   nameEn: "Causal Inference Module",    icon: GitBranch,     color: "text-primary",     desc: "تحليل السبب الجذري والاستدلال المضاد للواقع ونمذجة السلسلة السببية التنبؤية." },
+  { id: 7,  name: "طبقة تطبيق الأمن",        nameEn: "Security Enforcement Layer", icon: Lock,          color: "text-red-400",     desc: "أمان بدون ثقة، منع حقن الأوامر، تعقيم البيانات، والتحكم في الوصول." },
+  { id: 8,  name: "هيكل المعرفة",            nameEn: "Knowledge Architecture",     icon: Database,      color: "text-sky-400",     desc: "رسم بياني للمعرفة الموزعة، الفهرسة الدلالية، والربط المفاهيمي متعدد المجالات." },
+  { id: 9,  name: "بروتوكول التنسيق",        nameEn: "Coordination Protocol",      icon: Network,       color: "text-emerald-400", desc: "تنسيق متعدد الوكلاء وبناء الإجماع وحل النزاعات بين الوكلاء." },
+  { id: 10, name: "نواة التعلم التكيفي",      nameEn: "Adaptive Learning Core",     icon: Cpu,           color: "text-primary",     desc: "تحسين مستمر من التغذية الراجعة وتحسين الأداء وتشغيل ضبط النماذج." },
+  { id: 11, name: "محرك الشفافية",           nameEn: "Transparency Engine",        icon: Eye,           color: "text-purple-400",  desc: "توليد الشرح ومسارات التدقيق ومنطق القرار وتسجيل متوافق مع GDPR." },
+  { id: 12, name: "مراقب الامتثال",          nameEn: "Compliance Monitor",         icon: CheckCircle2,  color: "text-amber-400",   desc: "فحص الامتثال التنظيمي عبر GDPR وCCPA وقانون الذكاء الاصطناعي والأخلاقيات الإماراتية." },
+  { id: 13, name: "محسّن الموارد",           nameEn: "Resource Optimizer",         icon: Wrench,        color: "text-orange-400",  desc: "تخصيص الحوسبة وتحسين التكاليف وكفاءة الطاقة وإدارة مستوى الخدمة." },
+  { id: 14, name: "الذكاء الثقافي",          nameEn: "Cultural Intelligence",      icon: Globe,         color: "text-emerald-400", desc: "التواصل متعدد الثقافات والسياق العربي/الإسلامي وتكيف الأعراف الإقليمية." },
+  { id: 15, name: "وحدة التطور",            nameEn: "Evolution Controller",       icon: Zap,           color: "text-red-400",     desc: "التحسين الذاتي للنظام ومقترحات تطور البنية والتحكم في إصدار سلوكيات الذكاء الاصطناعي." },
 ];
 
 const PHASE_PIPELINE = [
-  "Input Ingestion", "Constitutional Check", "Lexical Parse", "Epistemic Validation",
-  "Ethical Analysis", "Risk Assessment", "Causal Modeling", "Security Gate",
-  "Knowledge Query", "Agent Coordination", "Response Generation", "Transparency Log",
-  "Compliance Verify", "Resource Settle", "Cultural Adapt", "Output Delivery",
-  "Feedback Capture", "Learning Update", "Audit Archive", "Evolution Signal",
-  "Stakeholder Report", "Cycle Complete",
+  "استيعاب المدخلات", "الفحص الدستوري", "التحليل اللغوي", "التحقق المعرفي",
+  "التحليل الأخلاقي", "تقييم المخاطر", "النمذجة السببية", "بوابة الأمن",
+  "استعلام المعرفة", "تنسيق الوكلاء", "توليد الاستجابة", "سجل الشفافية",
+  "التحقق من الامتثال", "تسوية الموارد", "التكيف الثقافي", "تسليم المخرجات",
+  "التقاط التغذية الراجعة", "تحديث التعلم", "أرشيف التدقيق", "إشارة التطور",
+  "تقرير أصحاب المصلحة", "اكتمال الدورة",
 ];
 
 export default function CaeosPage() {
-  const { data: allAgents } = useListAgents();
+  const { data: allAgents, isLoading: agentsLoading } = useListAgents();
+  const { data: alerts } = useGetBillieAlerts();
+  const { data: metrics } = useGetSystemMetrics();
+  const executeAgent = useExecuteAgent();
+  const qc = useQueryClient();
+
   const [activeLayer, setActiveLayer] = useState<number | null>(null);
   const [activePhase, setActivePhase] = useState(7);
+  const [ethicsInput, setEthicsInput] = useState("");
+  const [ethicsRunning, setEthicsRunning] = useState(false);
+  const [ethicsResult, setEthicsResult] = useState<string | null>(null);
+  const [showEthicsModal, setShowEthicsModal] = useState(false);
 
   const caeos = allAgents?.filter(a => a.system === "CAEOS") ?? [];
   const layerData = activeLayer != null ? SOVEREIGN_LAYERS[activeLayer - 1] : null;
 
+  const onlineCaeos  = caeos.filter(a => a.status === "online").length;
+  const busyCaeos    = caeos.filter(a => a.status === "busy").length;
+  const totalExecsToday = caeos.reduce((s, a) => s + (a.executions_today || 0), 0);
+  const activeAlerts = alerts?.filter(a => !a.resolved).length ?? 0;
+
+  const ethicalCompliance = caeos.length > 0
+    ? Math.min(100, Math.round(((onlineCaeos + busyCaeos) / caeos.length) * 100 * 0.95 + 4.8))
+    : 100;
+  const avgRiskScore = activeAlerts === 0 ? 1.2 : Math.min(9.9, Math.round(activeAlerts * 1.8 * 10) / 10);
+  const pipelineThroughput = metrics?.total_executions_today ?? totalExecsToday;
+  const layerHealth = caeos.length > 0 ? Math.round((onlineCaeos + busyCaeos) / caeos.length * 15) : 15;
+
+  async function handleEthicsAnalysis() {
+    if (!ethicsInput.trim()) return;
+    setEthicsRunning(true);
+    setEthicsResult(null);
+    try {
+      const res = await executeAgent.mutateAsync({
+        agentId: "caeos-master",
+        data: {
+          action: "تحليل أخلاقي شامل",
+          prompt: `أجرِ تحليلاً أخلاقياً شاملاً للمحتوى أو الموقف التالي من منظور نظام CAEOS الدستوري:
+
+${ethicsInput}
+
+قيّم عبر:
+1. المبادئ الدستورية (هل يلتزم بالمبادئ الـ15؟)
+2. التحليل الأخلاقي متعدد الأطر (نفعي، واجبي، إسلامي)
+3. تقييم المخاطر (1-10) مع الأدلة
+4. الحكم النهائي (مقبول / مقبول مشروط / مرفوض)
+5. التوصيات والبدائل المقترحة`,
+        },
+      });
+      setEthicsResult(res?.result ?? "اكتمل التحليل.");
+      setShowEthicsModal(true);
+      qc.invalidateQueries();
+    } catch (e: any) {
+      setEthicsResult(`خطأ: ${e?.message}`);
+      setShowEthicsModal(true);
+    }
+    setEthicsRunning(false);
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" dir="rtl">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-orange-500/20 border border-orange-500/50 flex items-center justify-center text-orange-400">
@@ -51,41 +107,65 @@ export default function CaeosPage() {
           </div>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold">CAEOS / SERVX</h1>
-              <Badge className="bg-orange-500/10 text-orange-400 border-orange-500/30 font-mono text-xs">CONSTITUTIONAL AI OS</Badge>
+              <h1 className="text-2xl font-bold">كايوس / سيرفكس</h1>
+              <Badge className="bg-orange-500/10 text-orange-400 border-orange-500/30 font-mono text-xs">نظام الذكاء الاصطناعي الدستوري</Badge>
               <Badge className="bg-red-500/10 text-red-400 border-red-500/30 font-mono text-xs">v2.0</Badge>
             </div>
             <p className="text-muted-foreground text-sm mt-0.5">
-              15 Sovereign Layers · 22-Phase Pipeline · Constitutional AI Engineering
+              15 طبقة سيادية · خط معالجة 22 مرحلة · هندسة الذكاء الاصطناعي الدستوري
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2 text-xs font-mono text-orange-400">
           <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
-          CAEOS ACTIVE
+          CAEOS نشط
         </div>
       </div>
 
+      {/* Interactive Ethics Analysis */}
+      <div className="p-4 rounded border border-orange-500/20 bg-orange-500/5 space-y-3">
+        <div className="flex items-center gap-2 justify-end">
+          <span className="text-sm font-bold">التحليل الأخلاقي التفاعلي</span>
+          <Shield size={16} className="text-orange-400" />
+        </div>
+        <p className="text-xs text-muted-foreground text-right">
+          أدخل نصاً أو موقفاً لتحليله عبر 15 طبقة سيادية دستورية بواسطة CAEOS
+        </p>
+        <Textarea
+          placeholder="أدخل محتوى أو موقفاً للتحليل الأخلاقي…&#10;&#10;مثال: سيناريو فيلم يتضمن مشهداً عنيفاً، أو قرار تجاري، أو محتوى إبداعي"
+          rows={3} value={ethicsInput}
+          onChange={e => setEthicsInput(e.target.value)}
+          dir="rtl" className="text-right bg-background/50"
+        />
+        <Button onClick={handleEthicsAnalysis} disabled={ethicsRunning || !ethicsInput.trim()}
+          className="w-full gap-2 bg-orange-500/20 text-orange-300 border border-orange-500/30 hover:bg-orange-500/30">
+          {ethicsRunning ? (
+            <><Clock size={14} className="animate-spin" />CAEOS يحلل…</>
+          ) : (
+            <><Play size={14} />تشغيل التحليل الأخلاقي</>
+          )}
+        </Button>
+      </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Sovereign Layers */}
         <div className="xl:col-span-2 space-y-4">
-          <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest">15 Sovereign Layers</div>
+          <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest">15 طبقة سيادية</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {SOVEREIGN_LAYERS.map(layer => {
               const Icon = layer.icon;
               const isActive = activeLayer === layer.id;
               return (
                 <button key={layer.id} onClick={() => setActiveLayer(isActive ? null : layer.id)}
-                  className={`p-3 rounded border text-left transition-all group ${
+                  className={`p-3 rounded border text-right transition-all group ${
                     isActive
                       ? "border-orange-500/50 bg-orange-500/10"
                       : "border-border/50 bg-card hover:border-orange-500/20 hover:bg-orange-500/5"
                   }`}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className={`w-6 h-6 rounded flex items-center justify-center bg-secondary shrink-0`}>
+                  <div className="flex items-center gap-2 mb-1 justify-end">
+                    <span className="text-[10px] font-mono text-muted-foreground">L{String(layer.id).padStart(2, "0")}</span>
+                    <div className="w-6 h-6 rounded flex items-center justify-center bg-secondary shrink-0">
                       <Icon size={12} className={layer.color} />
                     </div>
-                    <span className="text-[10px] font-mono text-muted-foreground">L{String(layer.id).padStart(2, "0")}</span>
                   </div>
                   <div className="text-xs font-bold">{layer.name}</div>
                 </button>
@@ -93,68 +173,70 @@ export default function CaeosPage() {
             })}
           </div>
 
-          {/* Layer Detail */}
           {layerData && (
-            <div className={`p-4 rounded border bg-card`} style={{ borderColor: "rgba(249,115,22,0.3)" }}>
-              <div className="flex items-center gap-3 mb-2">
-                <layerData.icon size={20} className={layerData.color} />
+            <div className="p-4 rounded border bg-card" style={{ borderColor: "rgba(249,115,22,0.3)" }}>
+              <div className="flex items-center gap-3 mb-2 justify-end">
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold">{layerData.name}</span>
+                  <div className="flex items-center gap-2 justify-end">
                     <Badge className="bg-orange-500/10 text-orange-400 border-orange-500/30 text-[10px] font-mono">
-                      Layer {layerData.id}
+                      الطبقة {layerData.id}
                     </Badge>
+                    <span className="font-bold">{layerData.name}</span>
                   </div>
+                  <div className="text-xs text-muted-foreground font-mono text-right opacity-60">{layerData.nameEn}</div>
                 </div>
+                <layerData.icon size={20} className={layerData.color} />
               </div>
-              <p className="text-sm text-muted-foreground">{layerData.desc}</p>
+              <p className="text-sm text-muted-foreground text-right">{layerData.desc}</p>
             </div>
           )}
         </div>
 
-        {/* 22-Phase Pipeline */}
         <div className="space-y-4">
-          <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest">22-Phase Processing Pipeline</div>
+          <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest">خط المعالجة — 22 مرحلة</div>
           <div className="p-4 bg-card border border-border/50 rounded space-y-1 h-[540px] overflow-y-auto">
             {PHASE_PIPELINE.map((phase, i) => (
               <button key={phase} onClick={() => setActivePhase(i)}
-                className={`w-full flex items-center gap-2 p-2 rounded text-xs text-left transition-colors ${
+                className={`w-full flex items-center gap-2 p-2 rounded text-xs text-right transition-colors ${
                   i === activePhase
                     ? "bg-orange-500/10 border border-orange-500/30 text-orange-300"
                     : i < activePhase
                     ? "bg-emerald-500/5 text-emerald-400/70"
                     : "text-muted-foreground hover:bg-secondary"
                 }`}>
+                {i === activePhase && <div className="mr-auto w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />}
+                <span className="font-mono flex-1 text-right">{phase}</span>
                 <div className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-mono font-bold shrink-0 ${
                   i === activePhase ? "bg-orange-500/20 text-orange-400" :
-                  i < activePhase ? "bg-emerald-500/20 text-emerald-400" :
+                  i < activePhase  ? "bg-emerald-500/20 text-emerald-400" :
                   "bg-secondary text-muted-foreground"
                 }`}>
                   {i < activePhase ? "✓" : String(i + 1).padStart(2, "0")}
                 </div>
-                <span className="font-mono">{phase}</span>
-                {i === activePhase && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />}
               </button>
             ))}
           </div>
         </div>
       </div>
 
-      {/* CAEOS Agents */}
-      {caeos.length > 0 && (
+      {agentsLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-28 bg-card border border-border/50" />)}
+        </div>
+      ) : caeos.length > 0 && (
         <div className="space-y-4">
-          <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest">Live CAEOS Agents</div>
+          <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest">وكلاء CAEOS المباشرون</div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {caeos.map(agent => (
               <div key={agent.id} className="p-4 rounded border border-border/50 bg-card hover:border-orange-500/30 transition-colors">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-2 justify-end">
+                  <span className="font-semibold text-sm">{agent.nameAr || agent.name}</span>
                   <div className={`w-2 h-2 rounded-full ${agent.status === "online" ? "bg-emerald-500" : agent.status === "busy" ? "bg-orange-400 animate-pulse" : "bg-muted-foreground"}`} />
-                  <span className="font-semibold text-sm">{agent.name}</span>
                 </div>
-                <p className="text-xs text-muted-foreground line-clamp-2">{agent.description}</p>
+                <p className="text-xs text-muted-foreground line-clamp-2 text-right">{agent.descriptionAr || agent.description}</p>
                 <div className="mt-2 text-xs font-mono text-muted-foreground flex items-center justify-between">
+                  <span>{agent.executions_today} تنفيذ اليوم</span>
                   <span>{agent.model}</span>
-                  <span>{agent.executions_today} exec/day</span>
                 </div>
               </div>
             ))}
@@ -162,23 +244,45 @@ export default function CaeosPage() {
         </div>
       )}
 
-      {/* Constitutional Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: "Ethical Compliance", value: "99.8%", icon: Shield, color: "text-emerald-400" },
-          { label: "Avg Risk Score", value: "1.4/10", icon: AlertTriangle, color: "text-amber-400" },
-          { label: "Pipeline Throughput", value: "2.1k/hr", icon: Zap, color: "text-primary" },
-          { label: "Layer Health", value: "15/15", icon: Layers, color: "text-orange-400" },
+        {agentsLoading ? (
+          Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-20 bg-card border border-border/50" />)
+        ) : [
+          { label: "الامتثال الأخلاقي", value: `${ethicalCompliance}%`, icon: Shield,        color: "text-emerald-400" },
+          { label: "متوسط درجة المخاطر", value: `${avgRiskScore}/10`,   icon: AlertTriangle, color: "text-amber-400" },
+          { label: "إنتاجية خط الأنابيب", value: `${pipelineThroughput}/اليوم`, icon: Zap, color: "text-primary" },
+          { label: "صحة الطبقات",         value: `${Math.max(layerHealth, 0)}/15`, icon: Layers, color: "text-orange-400" },
         ].map(m => (
-          <div key={m.label} className="p-4 rounded border border-border/50 bg-card">
-            <div className="flex items-center gap-2 mb-2">
+          <div key={m.label} className="p-4 rounded border border-border/50 bg-card" dir="rtl">
+            <div className="flex items-center gap-2 mb-2 justify-end">
+              <span className="text-xs font-mono text-muted-foreground uppercase tracking-widest text-right">{m.label}</span>
               <m.icon size={14} className={m.color} />
-              <span className="text-xs font-mono text-muted-foreground uppercase tracking-widest">{m.label}</span>
             </div>
             <div className={`text-2xl font-mono font-bold ${m.color}`}>{m.value}</div>
           </div>
         ))}
       </div>
+
+      {showEthicsModal && ethicsResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm" dir="rtl">
+          <div className="bg-card border border-orange-500/30 rounded-lg w-full max-w-3xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-border/50">
+              <button onClick={() => setShowEthicsModal(false)} className="p-1 hover:bg-secondary rounded">
+                <X size={16} />
+              </button>
+              <div className="text-right">
+                <h3 className="font-bold">نتيجة التحليل الأخلاقي CAEOS</h3>
+                <p className="text-xs text-muted-foreground font-mono">عبر 15 طبقة سيادية دستورية</p>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90" dir="rtl">
+                {ethicsResult}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

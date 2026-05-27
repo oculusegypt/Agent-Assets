@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import {
   Activity, BrainCircuit, MonitorPlay, MessageSquare,
-  Film, Building2, Shield, Cpu, ChevronLeft,
+  Film, Building2, Shield, Cpu, ChevronLeft, Settings2,
 } from "lucide-react";
 import { useGetSystemMetrics } from "@workspace/api-client-react";
 
@@ -30,6 +30,13 @@ const NAV_SECTIONS = [
     labelEn: "COMMS",
     items: [
       { href: "/conversations", label: "تواصل الوكلاء", labelEn: "Agent Comms", icon: MessageSquare, sub: "محادثة مباشرة" },
+    ],
+  },
+  {
+    label: "الإدارة",
+    labelEn: "ADMIN",
+    items: [
+      { href: "/settings", label: "الإعدادات", labelEn: "Settings", icon: Settings2, sub: "تحكم شامل بالنظام" },
     ],
   },
 ];

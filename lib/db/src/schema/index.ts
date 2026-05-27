@@ -134,6 +134,14 @@ export const activityTable = pgTable("activity", {
   created_at: timestamp("created_at").defaultNow(),
 });
 
+export const systemSettingsTable = pgTable("system_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  category: text("category").notNull().default("general"),
+  description: text("description"),
+  updated_at: timestamp("updated_at").defaultNow(),
+});
+
 export const insertAgentSchema = createInsertSchema(agentsTable);
 export const insertExecutionSchema = createInsertSchema(agentExecutionsTable);
 export const insertAlertSchema = createInsertSchema(systemAlertsTable);

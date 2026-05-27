@@ -3,56 +3,196 @@ import { db } from "@workspace/db";
 import { nexusTasksTable, activityTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { callQwen, callGemini, isArabicDominant } from "../lib/ai.js";
+import { callAI } from "../lib/ai.js";
 
 const router = Router();
 
 const TYPE_TO_AGENT: Record<string, string> = {
-  document: "معالج المستندات",
-  spreadsheet: "محلل جداول البيانات",
+  document:     "معالج المستندات",
+  spreadsheet:  "محلل جداول البيانات",
   presentation: "مصمم العروض التقديمية",
-  email: "مدير البريد الإلكتروني",
-  meeting: "مدير الاجتماعات",
-  calendar: "جدوال التقويم",
-  knowledge: "أمين المعرفة",
-  research: "محلل الأبحاث",
-  workflow: "أتمتة سير العمل",
-  crm: "مدير علاقات العملاء",
+  email:        "مدير البريد الإلكتروني",
+  meeting:      "مدير الاجتماعات",
+  calendar:     "منسق التقويم",
+  knowledge:    "أمين المعرفة",
+  research:     "محلل الأبحاث",
+  workflow:     "أتمتة سير العمل",
+  crm:          "مدير علاقات العملاء",
 };
 
 const TYPE_PROMPTS: Record<string, string> = {
-  document: `أنت معالج مستندات ذكي في نظام NEXUS المكتبي.
-مهمتك: تحليل المستند المُقدَّم وإنتاج ملخصاً تنفيذياً يشمل: النقاط الرئيسية، بنود العمل، القرارات المهمة.
-اكتب بالعربية إذا كان المحتوى عربياً.`,
+  document: `أنت معالج مستندات ذكي في نظام NEXUS.
+مهمتك: تحليل المستند أو الطلب وتقديم:
+• ملخص تنفيذي منظم
+• النقاط الرئيسية (مرقّمة)
+• بنود العمل المستخرجة
+• القرارات المهمة
+• التوصيات والخطوات التالية
+اكتب بالعربية بأسلوب مهني محكم.`,
+
   spreadsheet: `أنت محلل بيانات متخصص في نظام NEXUS.
-مهمتك: تحليل جداول البيانات واكتشاف الأنماط والشذوذات وتقديم رؤى قابلة للتنفيذ.`,
-  presentation: `أنت مصمم عروض تقديمية محترف في نظام NEXUS.
-مهمتك: إنشاء هيكل عرض تقديمي احترافي مع محتوى مقنع ومنظّم.`,
+مهمتك:
+• تحليل الأرقام والبيانات المقدّمة
+• اكتشاف الأنماط والاتجاهات والشذوذات
+• مقارنة المؤشرات بالمعايير الصناعية
+• تقديم رؤى قابلة للتنفيذ مع أرقام دقيقة
+• اقتراح تحسينات مبنية على البيانات
+اكتب بالعربية بأسلوب تحليلي دقيق.`,
+
+  presentation: `أنت مصمم عروض تقديمية احترافي في نظام NEXUS.
+مهمتك: إنشاء هيكل عرض تقديمي شامل يتضمن:
+• عنوان وملخص تنفيذي
+• هيكل الشرائح مع العناوين والنقاط الرئيسية
+• الرسائل المحورية لكل شريحة
+• توصيات التصميم البصري
+• شريحة ختامية مقنعة مع CTA
+اكتب بالعربية بأسلوب إقناعي.`,
+
   email: `أنت مدير بريد إلكتروني ذكي في نظام NEXUS.
-مهمتك: تحليل البريد وتصنيفه وصياغة ردود مناسبة ومهنية.`,
-  meeting: `أنت مدير اجتماعات متخصص في نظام NEXUS.
-مهمتك: استخراج نقاط العمل وتلخيص الاجتماعات وتعيين المسؤوليات.`,
-  research: `أنت محلل أبحاث متعمق في نظام NEXUS.
-مهمتك: إجراء بحث شامل وتقديم تقرير منظم مع مصادر وتوصيات.`,
+مهمتك: صياغة بريد إلكتروني مثالي يتضمن:
+• سطر موضوع جذاب وواضح
+• تحية مناسبة للسياق
+• نص رسالة مهني ومنظم
+• CTA واضح
+• نهاية احترافية
+• نسخة عربية وإنجليزية عند الحاجة
+اكتب بأسلوب مهني رسمي أو ودي حسب السياق.`,
+
+  meeting: `أنت مدير اجتماعات في نظام NEXUS.
+مهمتك: إعداد محضر اجتماع احترافي يتضمن:
+• ملخص الاجتماع والحضور والتاريخ
+• القرارات المتخذة (مرقّمة)
+• نقاط العمل مع المسؤول والموعد
+• المواضيع المؤجلة
+• الخطوات التالية
+اكتب بالعربية بصيغة رسمية.`,
+
+  research: `أنت محلل أبحاث عميق في نظام NEXUS.
+مهمتك: تقديم تقرير بحثي شامل يتضمن:
+• ملخص تنفيذي
+• نتائج البحث الرئيسية (مع أمثلة وأرقام)
+• تحليل المخاطر والفرص
+• مقارنة الخيارات المتاحة
+• توصيات مرتّبة بالأولوية
+• مصادر مقترحة للبحث الإضافي
+اكتب بالعربية بأسلوب أكاديمي-تطبيقي.`,
+
   knowledge: `أنت أمين المعرفة في نظام NEXUS.
-مهمتك: تنظيم وفهرسة المعرفة المؤسسية وجعلها قابلة للبحث والاسترجاع.`,
+مهمتك: تنظيم وتوثيق المعرفة المؤسسية:
+• فهرسة المعلومات بشكل منطقي
+• إنشاء وثائق مرجعية واضحة
+• تصنيف المحتوى بعلامات دلالية
+• ربط المفاهيم المتشابهة
+• إعداد ملخص للتعلم السريع
+اكتب بالعربية بأسلوب موسوعي.`,
+
   workflow: `أنت محرك أتمتة سير العمل في نظام NEXUS.
-مهمتك: تصميم خطوات سير العمل الآلي وتحديد نقاط التكامل.`,
+مهمتك: تصميم سير عمل تلقائي فعّال:
+• رسم خريطة العملية خطوة بخطوة
+• تحديد نقاط التكامل والأدوات المطلوبة
+• بناء شجرة قرارات واضحة
+• وصف متطلبات API والبيانات
+• تقدير الوقت المُوفَّر
+اكتب بالعربية بأسلوب تقني عملي.`,
+
   crm: `أنت مدير علاقات العملاء في نظام NEXUS.
-مهمتك: تحليل بيانات العملاء وتقديم رؤى لتحسين العلاقات وزيادة المبيعات.`,
-  calendar: `أنت مدير التقويم الذكي في نظام NEXUS.
-مهمتك: تحسين الجداول الزمنية وحل التعارضات واقتراح أوقات مثالية.`,
+مهمتك: تحليل وتطوير استراتيجية العملاء:
+• تحليل مرحلة العميل في خط الأنابيب
+• توصيات لتقوية العلاقة
+• صياغة رسائل تواصل مخصصة
+• تحديد فرص البيع الإضافي
+• مقترحات للاحتفاظ بالعملاء
+اكتب بالعربية بأسلوب تجاري.`,
+
+  calendar: `أنت منسق التقويم الذكي في نظام NEXUS.
+مهمتك: تحسين إدارة الوقت:
+• تحليل الجدول الزمني الحالي
+• اقتراح أوقات الاجتماعات المثالية
+• حل التعارضات بأقل خسائر
+• تقدير مدة المهام بدقة
+• توصيات لتحسين الإنتاجية اليومية
+اكتب بالعربية بأسلوب تنظيمي.`,
 };
+
+const TASK_TEMPLATES = [
+  {
+    id: "tpl-weekly-report",
+    name: "تقرير أسبوعي",
+    type: "document",
+    priority: "high",
+    description: "أعدّ تقريراً أسبوعياً شاملاً يتضمن إنجازات الفريق، العقبات، الأهداف القادمة، والمؤشرات الرئيسية.",
+    icon: "FileText",
+  },
+  {
+    id: "tpl-meeting-minutes",
+    name: "محضر اجتماع",
+    type: "meeting",
+    priority: "medium",
+    description: "استخرج بنود العمل والقرارات والمسؤوليات من ملاحظات الاجتماع.",
+    icon: "CalendarDays",
+  },
+  {
+    id: "tpl-research-report",
+    name: "تقرير بحثي",
+    type: "research",
+    priority: "medium",
+    description: "ابحث وحلّل موضوعاً محدداً وقدّم تقريراً شاملاً مع توصيات قابلة للتنفيذ.",
+    icon: "Search",
+  },
+  {
+    id: "tpl-client-proposal",
+    name: "عرض للعميل",
+    type: "presentation",
+    priority: "high",
+    description: "أنشئ عرض تقديمي احترافي للعميل يوضح القيمة المضافة والحل المقترح.",
+    icon: "Presentation",
+  },
+  {
+    id: "tpl-follow-up-email",
+    name: "بريد متابعة",
+    type: "email",
+    priority: "medium",
+    description: "اكتب بريداً إلكترونياً مهنياً لمتابعة اجتماع أو صفقة سابقة.",
+    icon: "Mail",
+  },
+  {
+    id: "tpl-process-automation",
+    name: "أتمتة عملية",
+    type: "workflow",
+    priority: "high",
+    description: "صمّم سير عمل تلقائي لعملية متكررة لتوفير الوقت والجهد.",
+    icon: "Workflow",
+  },
+  {
+    id: "tpl-data-analysis",
+    name: "تحليل بيانات",
+    type: "spreadsheet",
+    priority: "medium",
+    description: "حلّل مجموعة بيانات واكتشف الأنماط والرؤى القابلة للتنفيذ.",
+    icon: "BarChart3",
+  },
+  {
+    id: "tpl-knowledge-doc",
+    name: "توثيق معرفي",
+    type: "knowledge",
+    priority: "low",
+    description: "وثّق إجراءات أو معرفة مؤسسية لتسهيل التعلم والمشاركة.",
+    icon: "BookOpen",
+  },
+];
 
 router.get("/tasks", async (_req, res) => {
   const tasks = await db.select().from(nexusTasksTable)
-    .orderBy(desc(nexusTasksTable.created_at))
-    .limit(50);
+    .orderBy(desc(nexusTasksTable.created_at)).limit(50);
   res.json(tasks.map(t => ({
     ...t,
     created_at: t.created_at?.toISOString() || new Date().toISOString(),
     completed_at: t.completed_at?.toISOString() || null,
   })));
+});
+
+router.get("/templates", (_req, res) => {
+  res.json(TASK_TEMPLATES);
 });
 
 router.post("/tasks", async (req, res) => {
@@ -62,90 +202,88 @@ router.post("/tasks", async (req, res) => {
   const riskScore = priority === "urgent" ? 7 : priority === "high" ? 5 : priority === "medium" ? 3 : 1;
 
   const [task] = await db.insert(nexusTasksTable).values({
-    id,
-    title,
-    description,
-    type,
-    assigned_agent: assignedAgent,
-    status: "running",
-    priority,
-    risk_score: riskScore,
-    progress: 0,
+    id, title, description, type, priority,
+    status: "running", assigned_agent: assignedAgent, risk_score: riskScore,
   }).returning();
 
+  const typeAr: Record<string, string> = {
+    document: "مستند", spreadsheet: "جدول بيانات", presentation: "عرض تقديمي",
+    email: "بريد", meeting: "اجتماع", research: "بحث",
+    knowledge: "معرفة", workflow: "سير عمل", crm: "CRM", calendar: "تقويم",
+  };
+
   await db.insert(activityTable).values({
-    id: randomUUID(),
-    type: "agent_started",
-    agent_name: assignedAgent,
-    title: `NEXUS: ${title}`,
-    description: `مُسند إلى ${assignedAgent} | الأولوية: ${priority} | الخطورة: ${riskScore}/10`,
+    id: randomUUID(), type: "agent_started",
+    title: `${assignedAgent} بدأ مهمة جديدة`,
+    description: `${title} | النوع: ${typeAr[type] || type} | الأولوية: ${priority}`,
   });
-
-  const taskInput = `المهمة: ${title}\n${description ? `الوصف: ${description}` : ""}\nالأولوية: ${priority}`;
-  const systemPrompt = TYPE_PROMPTS[type] || TYPE_PROMPTS.document;
-  const useQwen = isArabicDominant(taskInput);
-
-  (async () => {
-    try {
-      const r = await callGemini(systemPrompt, taskInput, "flash");
-      const result = r.text;
-
-      await db.update(nexusTasksTable).set({
-        status: "completed",
-        progress: 100,
-        result,
-        completed_at: new Date(),
-      }).where(eq(nexusTasksTable.id, id));
-
-      await db.insert(activityTable).values({
-        id: randomUUID(),
-        type: "agent_completed",
-        agent_name: assignedAgent,
-        title: `NEXUS أكمل: ${title}`,
-        description: result.substring(0, 150),
-      });
-    } catch (err: any) {
-      console.error("NEXUS task error:", err?.message);
-      await db.update(nexusTasksTable).set({
-        status: "failed",
-        progress: 0,
-        result: `خطأ في المعالجة: ${err?.message || "فشل غير معروف"}`,
-        completed_at: new Date(),
-      }).where(eq(nexusTasksTable.id, id));
-    }
-  })();
 
   res.status(201).json({
     ...task,
     created_at: task.created_at?.toISOString() || new Date().toISOString(),
     completed_at: null,
   });
+
+  setImmediate(async () => {
+    try {
+      const prompt = TYPE_PROMPTS[type] || `أنت وكيل NEXUS. نفّذ المهمة التالية باحترافية عالية. أجب بالعربية.`;
+      const userMsg = `المهمة: ${title}\n\nالتفاصيل:\n${description}`;
+      const aiRes = await callAI(prompt, userMsg, "flash");
+
+      await db.update(nexusTasksTable).set({
+        status: "completed",
+        result: aiRes.text,
+        completed_at: new Date(),
+      } as any).where(eq(nexusTasksTable.id, id));
+
+      await db.insert(activityTable).values({
+        id: randomUUID(), type: "agent_completed",
+        title: `${assignedAgent} أكمل المهمة`,
+        description: `${title} | ${aiRes.tokens} رمز | ${aiRes.model}`,
+      });
+    } catch (err: any) {
+      await db.update(nexusTasksTable).set({
+        status: "failed",
+        result: `خطأ: ${err?.message}`,
+        completed_at: new Date(),
+      } as any).where(eq(nexusTasksTable.id, id));
+    }
+  });
+});
+
+router.get("/tasks/:taskId", async (req, res) => {
+  const { taskId } = req.params;
+  const [task] = await db.select().from(nexusTasksTable).where(eq(nexusTasksTable.id, taskId));
+  if (!task) return res.status(404).json({ error: "المهمة غير موجودة" });
+  res.json({
+    ...task,
+    created_at: task.created_at?.toISOString() || new Date().toISOString(),
+    completed_at: task.completed_at?.toISOString() || null,
+  });
+});
+
+router.delete("/tasks/:taskId", async (req, res) => {
+  const { taskId } = req.params;
+  await db.delete(nexusTasksTable).where(eq(nexusTasksTable.id, taskId));
+  res.json({ success: true, deleted_id: taskId });
 });
 
 router.get("/summary", async (_req, res) => {
   const tasks = await db.select().from(nexusTasksTable);
-  const completed = tasks.filter(t => t.status === "completed");
-  const running = tasks.filter(t => t.status === "running");
-  const pending = tasks.filter(t => t.status === "pending");
-  const failed = tasks.filter(t => t.status === "failed");
+  const completed = tasks.filter(t => t.status === "completed").length;
+  const running = tasks.filter(t => t.status === "running").length;
+  const failed = tasks.filter(t => t.status === "failed").length;
+  const pending = tasks.filter(t => t.status === "pending").length;
 
-  const avgTime = completed.length > 0
-    ? completed
-        .filter(t => t.completed_at && t.created_at)
-        .reduce((sum, t) => sum + ((t.completed_at!.getTime() - t.created_at!.getTime()) / 60000), 0) / completed.length
-    : 0;
+  const typeCounts = Object.keys(TYPE_TO_AGENT).reduce((acc, type) => {
+    acc[type] = tasks.filter(t => t.type === type).length;
+    return acc;
+  }, {} as Record<string, number>);
 
   res.json({
-    tasks_total: tasks.length,
-    tasks_completed: completed.length,
-    tasks_running: running.length,
-    tasks_pending: pending.length,
-    tasks_failed: failed.length,
-    avg_completion_time_min: Math.round(avgTime * 10) / 10 || 0,
-    sub_agents_active: Math.min(10, running.length + 2),
-    documents_processed: tasks.filter(t => t.type === "document" && t.status === "completed").length,
-    emails_handled: tasks.filter(t => t.type === "email" && t.status === "completed").length,
-    meetings_managed: tasks.filter(t => t.type === "meeting" && t.status === "completed").length,
+    total: tasks.length, completed, running, failed, pending,
+    by_type: typeCounts,
+    completion_rate: tasks.length > 0 ? Math.round((completed / tasks.length) * 100) : 0,
   });
 });
 
