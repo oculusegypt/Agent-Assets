@@ -108,9 +108,9 @@
   --chart-4: 0 84% 60%;
   --chart-5: 280 80% 60%;
 
-  --app-font-sans: 'Inter', sans-serif;
-  --app-font-serif: Georgia, serif;
-  --app-font-mono: 'Space Mono', Menlo, monospace;
+  --app-font-sans: 'Cairo', 'Inter', sans-serif;
+  --app-font-serif: 'Cairo', Georgia, serif;
+  --app-font-mono: 'IBM Plex Mono', Menlo, monospace;
   --radius: .25rem;
   
   --shadow-2xs: 0px 2px 0px 0px rgba(0,0,0,0.5);

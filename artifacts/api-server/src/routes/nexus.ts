@@ -3,20 +3,45 @@ import { db } from "@workspace/db";
 import { nexusTasksTable, activityTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { callQwen, callGemini, isArabicDominant } from "../lib/ai.js";
 
 const router = Router();
 
 const TYPE_TO_AGENT: Record<string, string> = {
-  document: "Document Processor",
-  spreadsheet: "Spreadsheet Analyst",
-  presentation: "Presentation Designer",
-  email: "Email Manager",
-  meeting: "Meeting Manager",
-  calendar: "Calendar Scheduler",
-  knowledge: "Knowledge Curator",
-  research: "Research Analyst",
-  workflow: "Workflow Automation",
-  crm: "CRM Manager",
+  document: "معالج المستندات",
+  spreadsheet: "محلل جداول البيانات",
+  presentation: "مصمم العروض التقديمية",
+  email: "مدير البريد الإلكتروني",
+  meeting: "مدير الاجتماعات",
+  calendar: "جدوال التقويم",
+  knowledge: "أمين المعرفة",
+  research: "محلل الأبحاث",
+  workflow: "أتمتة سير العمل",
+  crm: "مدير علاقات العملاء",
+};
+
+const TYPE_PROMPTS: Record<string, string> = {
+  document: `أنت معالج مستندات ذكي في نظام NEXUS المكتبي.
+مهمتك: تحليل المستند المُقدَّم وإنتاج ملخصاً تنفيذياً يشمل: النقاط الرئيسية، بنود العمل، القرارات المهمة.
+اكتب بالعربية إذا كان المحتوى عربياً.`,
+  spreadsheet: `أنت محلل بيانات متخصص في نظام NEXUS.
+مهمتك: تحليل جداول البيانات واكتشاف الأنماط والشذوذات وتقديم رؤى قابلة للتنفيذ.`,
+  presentation: `أنت مصمم عروض تقديمية محترف في نظام NEXUS.
+مهمتك: إنشاء هيكل عرض تقديمي احترافي مع محتوى مقنع ومنظّم.`,
+  email: `أنت مدير بريد إلكتروني ذكي في نظام NEXUS.
+مهمتك: تحليل البريد وتصنيفه وصياغة ردود مناسبة ومهنية.`,
+  meeting: `أنت مدير اجتماعات متخصص في نظام NEXUS.
+مهمتك: استخراج نقاط العمل وتلخيص الاجتماعات وتعيين المسؤوليات.`,
+  research: `أنت محلل أبحاث متعمق في نظام NEXUS.
+مهمتك: إجراء بحث شامل وتقديم تقرير منظم مع مصادر وتوصيات.`,
+  knowledge: `أنت أمين المعرفة في نظام NEXUS.
+مهمتك: تنظيم وفهرسة المعرفة المؤسسية وجعلها قابلة للبحث والاسترجاع.`,
+  workflow: `أنت محرك أتمتة سير العمل في نظام NEXUS.
+مهمتك: تصميم خطوات سير العمل الآلي وتحديد نقاط التكامل.`,
+  crm: `أنت مدير علاقات العملاء في نظام NEXUS.
+مهمتك: تحليل بيانات العملاء وتقديم رؤى لتحسين العلاقات وزيادة المبيعات.`,
+  calendar: `أنت مدير التقويم الذكي في نظام NEXUS.
+مهمتك: تحسين الجداول الزمنية وحل التعارضات واقتراح أوقات مثالية.`,
 };
 
 router.get("/tasks", async (_req, res) => {
@@ -33,7 +58,7 @@ router.get("/tasks", async (_req, res) => {
 router.post("/tasks", async (req, res) => {
   const { title, description, type, priority } = req.body;
   const id = randomUUID();
-  const assignedAgent = TYPE_TO_AGENT[type] || "NEXUS Orchestrator";
+  const assignedAgent = TYPE_TO_AGENT[type] || "منسق NEXUS";
   const riskScore = priority === "urgent" ? 7 : priority === "high" ? 5 : priority === "medium" ? 3 : 1;
 
   const [task] = await db.insert(nexusTasksTable).values({
@@ -53,26 +78,42 @@ router.post("/tasks", async (req, res) => {
     type: "agent_started",
     agent_name: assignedAgent,
     title: `NEXUS: ${title}`,
-    description: `Assigned to ${assignedAgent} | Priority: ${priority} | Risk: ${riskScore}/10`,
+    description: `مُسند إلى ${assignedAgent} | الأولوية: ${priority} | الخطورة: ${riskScore}/10`,
   });
 
-  // Simulate progressive completion
-  setTimeout(async () => {
-    const result = generateNexusResult(type, title);
-    await db.update(nexusTasksTable).set({
-      status: "completed",
-      progress: 100,
-      result,
-      completed_at: new Date(),
-    }).where(eq(nexusTasksTable.id, id));
-    await db.insert(activityTable).values({
-      id: randomUUID(),
-      type: "agent_completed",
-      agent_name: assignedAgent,
-      title: `NEXUS completed: ${title}`,
-      description: result.substring(0, 150),
-    });
-  }, 5000 + Math.random() * 10000);
+  const taskInput = `المهمة: ${title}\n${description ? `الوصف: ${description}` : ""}\nالأولوية: ${priority}`;
+  const systemPrompt = TYPE_PROMPTS[type] || TYPE_PROMPTS.document;
+  const useQwen = isArabicDominant(taskInput);
+
+  (async () => {
+    try {
+      const r = await callGemini(systemPrompt, taskInput, "flash");
+      const result = r.text;
+
+      await db.update(nexusTasksTable).set({
+        status: "completed",
+        progress: 100,
+        result,
+        completed_at: new Date(),
+      }).where(eq(nexusTasksTable.id, id));
+
+      await db.insert(activityTable).values({
+        id: randomUUID(),
+        type: "agent_completed",
+        agent_name: assignedAgent,
+        title: `NEXUS أكمل: ${title}`,
+        description: result.substring(0, 150),
+      });
+    } catch (err: any) {
+      console.error("NEXUS task error:", err?.message);
+      await db.update(nexusTasksTable).set({
+        status: "failed",
+        progress: 0,
+        result: `خطأ في المعالجة: ${err?.message || "فشل غير معروف"}`,
+        completed_at: new Date(),
+      }).where(eq(nexusTasksTable.id, id));
+    }
+  })();
 
   res.status(201).json({
     ...task,
@@ -92,7 +133,7 @@ router.get("/summary", async (_req, res) => {
     ? completed
         .filter(t => t.completed_at && t.created_at)
         .reduce((sum, t) => sum + ((t.completed_at!.getTime() - t.created_at!.getTime()) / 60000), 0) / completed.length
-    : 8.5;
+    : 0;
 
   res.json({
     tasks_total: tasks.length,
@@ -100,28 +141,12 @@ router.get("/summary", async (_req, res) => {
     tasks_running: running.length,
     tasks_pending: pending.length,
     tasks_failed: failed.length,
-    avg_completion_time_min: Math.round(avgTime * 10) / 10 || 8.5,
+    avg_completion_time_min: Math.round(avgTime * 10) / 10 || 0,
     sub_agents_active: Math.min(10, running.length + 2),
     documents_processed: tasks.filter(t => t.type === "document" && t.status === "completed").length,
     emails_handled: tasks.filter(t => t.type === "email" && t.status === "completed").length,
     meetings_managed: tasks.filter(t => t.type === "meeting" && t.status === "completed").length,
   });
 });
-
-function generateNexusResult(type: string, title: string): string {
-  const results: Record<string, string> = {
-    document: `Document processed: "${title}". Extracted 3 key sections, 12 action items, and 5 critical decisions. Summary generated in Arabic and English. Formatted for distribution.`,
-    email: `Email analysis complete. Classified as high-priority. Suggested response drafted with formal tone. Follow-up scheduled for tomorrow 9 AM.`,
-    calendar: `Calendar optimized. Removed 2 conflicts, proposed 3 alternative meeting slots. Blocked focus time 10 AM–12 PM daily.`,
-    meeting: `Meeting notes transcribed: 47 minutes. 8 action items extracted, owners assigned. Summary sent to all participants.`,
-    spreadsheet: `Spreadsheet analyzed: 2,847 rows. Created dashboard with 4 KPI charts. Anomaly detected in Q3 column G — flagged for review.`,
-    presentation: `Presentation created: 12 slides. Executive summary, data visualizations, and recommendations. Branded template applied.`,
-    knowledge: `Knowledge base updated with 15 new entries. Semantic search index rebuilt. 3 duplicate concepts merged.`,
-    research: `Research complete on "${title}": 24 sources analyzed, 8 key insights extracted, competitive landscape mapped.`,
-    crm: `CRM records updated: 12 contacts enriched, 3 deals advanced, pipeline value increased by $45,000.`,
-    workflow: `Workflow automated: 5-step pipeline configured. Estimated time savings: 3.2 hours/week per user.`,
-  };
-  return results[type] || `Task "${title}" completed successfully by NEXUS sub-agent.`;
-}
 
 export default router;

@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { agentsTable, agentExecutionsTable, activityTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { callGemini, callQwen, getAgentSystemPrompt, isArabicDominant } from "../lib/ai.js";
 
 const router = Router();
 
@@ -36,56 +37,80 @@ router.post("/:agentId/execute", async (req, res) => {
     model_used: agent.model,
   }).returning();
 
-  // Simulate execution with a realistic delay based on model
-  const delayMs = Math.floor(Math.random() * 2000) + 800;
-  const tokenCount = Math.floor(Math.random() * 2000) + 200;
+  try {
+    const systemPrompt = getAgentSystemPrompt(agentId, agent.name);
+    const userMessage = prompt
+      ? `المهمة: ${action}\n\nالتفاصيل: ${prompt}`
+      : `نفّذ المهمة التالية: ${action}`;
 
-  const responses: Record<string, string> = {
-    story: `تحليل القصة مكتمل. تم تحديد 3 فصول رئيسية، 12 مشهداً، وقوس عاطفي قوي مع ذروة في الفصل الثاني. النمط السينمائي: دراما تاريخية مع لقطات جوية ملحمية.`,
-    analyze: `Analysis complete. System health at ${Math.floor(85 + Math.random() * 15)}%. All ${agent.subagents ? (agent.subagents as string[]).length : 0} sub-agents operational. No critical issues detected.`,
-    generate: `Generation pipeline initiated. Estimated completion: ${Math.floor(Math.random() * 25) + 5} minutes. Using ${agent.model} for primary processing.`,
-    default: `Task "${action}" completed successfully. Agent ${agent.name} processed the request using ${agent.model}. ${Math.floor(Math.random() * 10) + 3} operations performed.`,
-  };
+    const aiRes = await callGemini(systemPrompt, userMessage, "flash");
+    const result = aiRes.text;
+    const tokenCount = aiRes.tokens;
+    const modelUsed = "gemini-2.5-flash";
 
-  const result = responses[action.toLowerCase()] || responses.default;
-  const duration = Date.now() - startTime + delayMs;
+    const duration = Date.now() - startTime;
 
-  await db.update(agentExecutionsTable).set({
-    status: "completed",
-    result,
-    duration_ms: duration,
-    completed_at: new Date(),
-    tokens_used: tokenCount,
-  }).where(eq(agentExecutionsTable.id, execId));
+    await db.update(agentExecutionsTable).set({
+      status: "completed",
+      result,
+      duration_ms: duration,
+      completed_at: new Date(),
+      tokens_used: tokenCount,
+      model_used: modelUsed,
+    }).where(eq(agentExecutionsTable.id, execId));
 
-  await db.update(agentsTable).set({
-    executions_today: agent.executions_today + 1,
-    last_active: new Date().toISOString(),
-    status: "online",
-  }).where(eq(agentsTable.id, agentId));
+    await db.update(agentsTable).set({
+      executions_today: agent.executions_today + 1,
+      last_active: new Date().toISOString(),
+      status: "online",
+    }).where(eq(agentsTable.id, agentId));
 
-  await db.insert(activityTable).values({
-    id: randomUUID(),
-    type: "agent_completed",
-    agent_id: agentId,
-    agent_name: agent.name,
-    title: `${agent.name} completed task`,
-    description: `Action: ${action} | Duration: ${Math.floor(duration / 1000)}s | Tokens: ${tokenCount}`,
-  });
+    await db.insert(activityTable).values({
+      id: randomUUID(),
+      type: "agent_completed",
+      agent_id: agentId,
+      agent_name: agent.name,
+      title: `${agent.nameAr || agent.name} أكمل المهمة`,
+      description: `الإجراء: ${action} | المدة: ${Math.floor(duration / 1000)}ث | الرموز: ${tokenCount}`,
+    });
 
-  res.json({
-    id: execId,
-    agentId,
-    action,
-    status: "completed",
-    result,
-    error: null,
-    duration_ms: duration,
-    created_at: exec.created_at?.toISOString() || new Date().toISOString(),
-    completed_at: new Date().toISOString(),
-    tokens_used: tokenCount,
-    model_used: agent.model,
-  });
+    res.json({
+      id: execId,
+      agentId,
+      action,
+      status: "completed",
+      result,
+      error: null,
+      duration_ms: duration,
+      created_at: exec.created_at?.toISOString() || new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      tokens_used: tokenCount,
+      model_used: modelUsed,
+    });
+  } catch (err: any) {
+    console.error(`Agent ${agentId} execution error:`, err?.message);
+    const errMsg = err?.message || "فشل التنفيذ";
+    await db.update(agentExecutionsTable).set({
+      status: "failed",
+      error: errMsg,
+      duration_ms: Date.now() - startTime,
+      completed_at: new Date(),
+    }).where(eq(agentExecutionsTable.id, execId));
+
+    res.status(500).json({
+      id: execId,
+      agentId,
+      action,
+      status: "failed",
+      result: null,
+      error: errMsg,
+      duration_ms: Date.now() - startTime,
+      created_at: exec.created_at?.toISOString() || new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      tokens_used: 0,
+      model_used: agent.model,
+    });
+  }
 });
 
 router.get("/:agentId/executions", async (req, res) => {
