@@ -376,30 +376,93 @@ export default function SettingsPage() {
       {/* ── AI Settings ── */}
       {tab === "ai" && (
         <div className="space-y-5">
-          <SectionCard icon={<BrainCircuit size={16} className="text-primary" />} title="نماذج الذكاء الاصطناعي">
-            <Row label="النموذج الأساسي (Flash)" desc="للمهام اليومية والمحادثات السريعة">
-              <select value={getSetting("ai.primary_model")} onChange={e => setSetting("ai.primary_model", e.target.value)}
-                className="bg-secondary border border-border rounded px-3 py-1.5 text-sm text-foreground">
-                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-                <option value="gemini-2.5-pro">gemini-2.5-pro</option>
-                <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-                <option value="gemini-1.5-pro">gemini-1.5-pro</option>
-              </select>
-            </Row>
-            <Row label="النموذج المتقدم (Pro)" desc="للتحليل المعمق ومهام بيليه">
+          {/* Primary providers header */}
+          <div className="flex items-center gap-3 p-3 rounded border border-primary/20 bg-primary/5">
+            <div className="flex-1 text-xs text-muted-foreground text-right">
+              <span className="text-primary font-semibold">Gemini (Google)</span> و <span className="text-orange-400 font-semibold">Qwen (Alibaba)</span> هما المزوّدان الأساسيان — جميع الوكلاء المهمة تستخدم أعلى نموذج متاح تلقائياً عبر التوجيه الذكي.
+            </div>
+            <div className="shrink-0 flex gap-1.5">
+              <span className="text-[9px] px-2 py-0.5 rounded-full bg-primary/20 border border-primary/30 text-primary font-mono">gemini-2.5-pro</span>
+              <span className="text-[9px] px-2 py-0.5 rounded-full bg-orange-400/20 border border-orange-400/30 text-orange-400 font-mono">qwen-max</span>
+            </div>
+          </div>
+
+          <SectionCard icon={<BrainCircuit size={16} className="text-primary" />} title="نماذج Google Gemini">
+            <Row label="نموذج Pro (الأعلى جودة)" desc="للوكلاء المعقدة — بيليه، السيناريو، الإخراج، NEXUS، CAEOS">
               <select value={getSetting("ai.pro_model")} onChange={e => setSetting("ai.pro_model", e.target.value)}
-                className="bg-secondary border border-border rounded px-3 py-1.5 text-sm text-foreground">
-                <option value="gemini-2.5-pro">gemini-2.5-pro</option>
-                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-                <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                className="bg-secondary border border-border rounded px-3 py-1.5 text-sm text-foreground min-w-[200px]">
+                <optgroup label="── الأعلى (مُوصى به) ──">
+                  <option value="gemini-2.5-pro">gemini-2.5-pro ⭐ الأقوى</option>
+                </optgroup>
+                <optgroup label="── سريع ──">
+                  <option value="gemini-2.5-flash">gemini-2.5-flash ⚡</option>
+                  <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                  <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite</option>
+                </optgroup>
+                <optgroup label="── الجيل الأول ──">
+                  <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                  <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                  <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b</option>
+                </optgroup>
               </select>
             </Row>
-            <Row label="نموذج Qwen (Alibaba)" desc="للمهام العربية عبر DashScope">
+            <Row label="نموذج Flash (المهام اليومية)" desc="للمهام السريعة والتجميع والمراقبة">
+              <select value={getSetting("ai.primary_model")} onChange={e => setSetting("ai.primary_model", e.target.value)}
+                className="bg-secondary border border-border rounded px-3 py-1.5 text-sm text-foreground min-w-[200px]">
+                <optgroup label="── الأحدث (مُوصى به) ──">
+                  <option value="gemini-2.5-flash">gemini-2.5-flash ⭐ الافتراضي</option>
+                  <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                </optgroup>
+                <optgroup label="── اقتصادي ──">
+                  <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite</option>
+                  <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                  <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b</option>
+                </optgroup>
+                <optgroup label="── Pro كاحتياط ──">
+                  <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                  <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                </optgroup>
+              </select>
+            </Row>
+          </SectionCard>
+
+          <SectionCard icon={<BrainCircuit size={16} className="text-orange-400" />} title="نماذج Qwen (Alibaba Cloud)">
+            <Row label="نموذج Qwen الأساسي" desc="احتياط Gemini ومهام المحتوى العربي عبر DashScope">
               <select value={getSetting("ai.qwen_model")} onChange={e => setSetting("ai.qwen_model", e.target.value)}
-                className="bg-secondary border border-border rounded px-3 py-1.5 text-sm text-foreground">
-                <option value="qwen-turbo">qwen-turbo (أسرع)</option>
-                <option value="qwen-plus">qwen-plus (متوازن)</option>
-                <option value="qwen-max">qwen-max (أقوى)</option>
+                className="bg-secondary border border-border rounded px-3 py-1.5 text-sm text-foreground min-w-[200px]">
+                <optgroup label="── الأعلى (مُوصى به) ──">
+                  <option value="qwen-max">qwen-max ⭐ الأقوى</option>
+                  <option value="qwen-max-latest">qwen-max-latest</option>
+                </optgroup>
+                <optgroup label="── متوازن ──">
+                  <option value="qwen-plus">qwen-plus ⚡</option>
+                  <option value="qwen-plus-latest">qwen-plus-latest</option>
+                </optgroup>
+                <optgroup label="── سريع / اقتصادي ──">
+                  <option value="qwen-turbo">qwen-turbo 🚀</option>
+                  <option value="qwen-turbo-latest">qwen-turbo-latest</option>
+                </optgroup>
+                <optgroup label="── نماذج متخصصة ──">
+                  <option value="qwen2.5-72b-instruct">qwen2.5-72b-instruct</option>
+                  <option value="qwen2.5-32b-instruct">qwen2.5-32b-instruct</option>
+                  <option value="qwen2.5-14b-instruct">qwen2.5-14b-instruct</option>
+                  <option value="qwen2.5-7b-instruct">qwen2.5-7b-instruct</option>
+                </optgroup>
+              </select>
+            </Row>
+            <Row label="نموذج Flash الاحتياطي (Qwen)" desc="لمهام السرعة والتجميع عند استخدام Alibaba">
+              <select value={getSetting("ai.qwen_flash_model")} onChange={e => setSetting("ai.qwen_flash_model", e.target.value)}
+                className="bg-secondary border border-border rounded px-3 py-1.5 text-sm text-foreground min-w-[200px]">
+                <optgroup label="── مُوصى به ──">
+                  <option value="qwen-plus">qwen-plus ⭐ الافتراضي</option>
+                </optgroup>
+                <optgroup label="── أسرع ──">
+                  <option value="qwen-turbo">qwen-turbo 🚀</option>
+                  <option value="qwen-turbo-latest">qwen-turbo-latest</option>
+                </optgroup>
+                <optgroup label="── أقوى ──">
+                  <option value="qwen-max">qwen-max</option>
+                </optgroup>
               </select>
             </Row>
           </SectionCard>

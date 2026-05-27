@@ -58,15 +58,15 @@ const AGENT_TIER_MAP: Record<string, TaskTier> = {
   "ai-prompt-director":  "pro",
   "model-orchestrator":  "pro",
   "stv-master":          "pro",
-  "honesty-auditor":     "flash",
-  "caeos-master":        "flash",
-  "nexus-master":        "flash",
+  "honesty-auditor":     "pro",
+  "caeos-master":        "pro",
+  "nexus-master":        "pro",
+  "scene-breakdown":     "pro",
+  "sound-music":         "pro",
+  "acis-master":         "pro",
   "gpu-render-workers":  "flash",
   "timeline-assembly":   "flash",
   "post-production":     "flash",
-  "scene-breakdown":     "flash",
-  "sound-music":         "flash",
-  "acis-master":         "flash",
 };
 
 export function getAgentTier(agentId: string): TaskTier {

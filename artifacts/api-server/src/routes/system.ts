@@ -47,6 +47,39 @@ router.get("/metrics", async (_req, res) => {
   });
 });
 
+router.get("/model-stats", async (_req, res) => {
+  const execs = await db.select().from(agentExecutionsTable);
+
+  const map: Record<string, { count: number; tokens: number; latency: number; latencyN: number; success: number; failed: number }> = {};
+  for (const e of execs) {
+    const m = e.model_used || "unknown";
+    if (!map[m]) map[m] = { count: 0, tokens: 0, latency: 0, latencyN: 0, success: 0, failed: 0 };
+    map[m].count++;
+    map[m].tokens += e.tokens_used || 0;
+    if (e.duration_ms) { map[m].latency += e.duration_ms; map[m].latencyN++; }
+    if (e.status === "completed") map[m].success++;
+    if (e.status === "failed") map[m].failed++;
+  }
+
+  const stats = Object.entries(map).map(([model, d]) => ({
+    model,
+    provider: model.startsWith("gemini") ? "Google" : model.startsWith("qwen") ? "Alibaba" : "أخرى",
+    tier: model.includes("pro") || model.includes("max") ? "pro" : "flash",
+    executions: d.count,
+    tokens_used: d.tokens,
+    avg_latency_ms: d.latencyN > 0 ? Math.round(d.latency / d.latencyN) : 0,
+    success_rate: d.count > 0 ? Math.round((d.success / d.count) * 100) : 100,
+    failed: d.failed,
+  })).sort((a, b) => b.executions - a.executions);
+
+  const total = execs.length;
+  const geminiCount = execs.filter(e => e.model_used?.startsWith("gemini")).length;
+  const qwenCount   = execs.filter(e => e.model_used?.startsWith("qwen")).length;
+  const totalTokens = execs.reduce((s, e) => s + (e.tokens_used || 0), 0);
+
+  res.json({ stats, total, gemini_count: geminiCount, qwen_count: qwenCount, total_tokens: totalTokens });
+});
+
 router.get("/activity", async (_req, res) => {
   const activity = await db.select().from(activityTable)
     .orderBy(desc(activityTable.created_at))
