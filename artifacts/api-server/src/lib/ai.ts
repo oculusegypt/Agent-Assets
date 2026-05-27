@@ -26,9 +26,19 @@ async function buildGemini(): Promise<GoogleGenerativeAI | null> {
   return key ? new GoogleGenerativeAI(key) : null;
 }
 
+export async function getAlibabaBase(): Promise<string> {
+  return (
+    process.env.ALIBABA_API_BASE ||
+    await getDbSetting("api_base.alibaba") ||
+    "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  );
+}
+
 async function buildQwen(): Promise<OpenAI | null> {
   const key = await getAlibabaKey();
-  return key ? new OpenAI({ apiKey: key, baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1" }) : null;
+  if (!key) return null;
+  const baseURL = await getAlibabaBase();
+  return new OpenAI({ apiKey: key, baseURL });
 }
 
 /* ─── Smart Model Router ────────────────────────────────────── */

@@ -46,6 +46,61 @@ router.get("/status", async (_req, res) => {
 
 router.get("/news", (_req, res) => res.json(AI_NEWS));
 
+router.post("/chat", async (req, res) => {
+  const { message, history = [] } = req.body;
+  if (!message?.trim()) return res.status(400).json({ error: "الرسالة مطلوبة" });
+
+  const agents = await db.select().from(agentsTable);
+  const alerts = await db.select().from(systemAlertsTable).where(eq(systemAlertsTable.resolved, false));
+  const complaints = await db.select().from(complaintsTable);
+  const online = agents.filter(a => a.status === "online").length;
+  const healthScore = Math.min(100, (online / Math.max(agents.length, 1)) * 100 * 0.7 + (100 - Math.min(alerts.length * 5, 30)));
+
+  const systemContext = `
+السياق الحالي للنظام (${new Date().toLocaleString("ar-SA")}):
+• الوكلاء: ${agents.length} إجمالي، ${online} متصل، ${agents.filter(a => a.status === "busy").length} مشغول
+• التنبيهات النشطة: ${alerts.length} (${alerts.slice(0,2).map(a => a.title).join(" | ") || "لا يوجد"})
+• الشكاوى المفتوحة: ${complaints.filter(c => c.status === "open" || c.status === "investigating").length}
+• صحة النظام: ${Math.round(healthScore)}%
+`;
+
+  const billiePrompt = AGENT_SYSTEM_PROMPTS["billie"] + `
+
+أنت بيليه، المشرفة العليا على نظام ACIS متعدد الوكلاء. أنت تتحدثين مع القائد مباشرةً.
+ردودك:
+- بالعربية الفصحى الواضحة
+- مختصرة وذكية (3-6 جمل عادةً، إلا إذا طُلب تقرير مفصل)
+- احترافية ودية في آن واحد
+- تعتمدين على بيانات النظام الفعلية أدناه
+
+${systemContext}`;
+
+  try {
+    const { callAIWithHistory } = await import("../lib/ai.js");
+    const msgs = [
+      ...history.slice(-6).map((h: any) => ({ role: h.role, parts: [{ text: h.text }] })),
+      { role: "user" as const, parts: [{ text: message }] },
+    ];
+    const result = await callAIWithHistory(billiePrompt, msgs, "pro");
+
+    await db.insert(activityTable).values({
+      id: randomUUID(), type: "billie_alert",
+      title: "محادثة مع بيليه",
+      description: message.substring(0, 100),
+    });
+
+    res.json({
+      reply: result.text,
+      model: result.model,
+      tokens: result.tokens,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    console.error("[بيليه شات] خطأ:", err?.message);
+    res.status(500).json({ error: "فشل في الحصول على رد بيليه — تحقق من مفاتيح API", detail: err?.message });
+  }
+});
+
 router.post("/news/analyze", async (req, res) => {
   const { topic } = req.body;
   try {

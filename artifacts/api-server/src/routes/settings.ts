@@ -104,7 +104,7 @@ router.get("/api-keys", async (_req, res) => {
 });
 
 router.put("/api-keys", async (req, res) => {
-  const { gemini, alibaba } = req.body as { gemini?: string; alibaba?: string };
+  const { gemini, alibaba, alibaba_base } = req.body as { gemini?: string; alibaba?: string; alibaba_base?: string };
   const saved: string[] = [];
 
   if (gemini !== undefined) {
@@ -131,6 +131,14 @@ router.put("/api-keys", async (req, res) => {
     }
   }
 
+  if (alibaba_base !== undefined) {
+    const base = alibaba_base.trim() || "https://dashscope.aliyuncs.com/compatible-mode/v1";
+    await db.insert(systemSettingsTable)
+      .values({ key: "api_base.alibaba", value: base, category: "api_keys", description: "Alibaba custom MaaS endpoint" })
+      .onConflictDoUpdate({ target: systemSettingsTable.key, set: { value: base, updated_at: new Date() } });
+    saved.push("alibaba_base");
+  }
+
   res.json({ success: true, saved });
 });
 
@@ -154,13 +162,15 @@ router.post("/test-ai", async (req, res) => {
   }
 
   if (provider === "qwen") {
+    const { getAlibabaKey, getAlibabaBase } = await import("../lib/ai.js");
     const key = await getAlibabaKey();
     if (!key) return res.json({ success: false, error: "ALIBABA_API_KEY غير مضبوط في البيئة أو قاعدة البيانات", latency_ms: 0 });
     try {
-      const q = new OpenAI({ apiKey: key, baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1" });
+      const baseURL = await getAlibabaBase();
+      const q = new OpenAI({ apiKey: key, baseURL });
       const r = await q.chat.completions.create({ model: "qwen-turbo", messages: [{ role: "user", content: "قل: متصل" }], max_tokens: 20 });
       const text = r.choices[0]?.message?.content || "";
-      return res.json({ success: true, response: text.substring(0, 100), latency_ms: Date.now() - start, model: "qwen-turbo" });
+      return res.json({ success: true, response: text.substring(0, 100), latency_ms: Date.now() - start, model: "qwen-turbo", endpoint: baseURL });
     } catch (e: any) {
       return res.json({ success: false, error: e?.message || "خطأ غير معروف", latency_ms: Date.now() - start });
     }

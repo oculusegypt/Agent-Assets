@@ -58,7 +58,7 @@ export default function SettingsPage() {
 
   type KeyStatus = { configured: boolean; source: "env" | "db" | null };
   const [keyStatus, setKeyStatus] = useState<{ gemini: KeyStatus; alibaba: KeyStatus } | null>(null);
-  const [keyInputs, setKeyInputs] = useState<{ gemini: string; alibaba: string }>({ gemini: "", alibaba: "" });
+  const [keyInputs, setKeyInputs] = useState<{ gemini: string; alibaba: string; alibaba_base: string }>({ gemini: "", alibaba: "", alibaba_base: "" });
   const [showKey, setShowKey] = useState<{ gemini: boolean; alibaba: boolean }>({ gemini: false, alibaba: false });
   const [keySaving, setKeySaving] = useState(false);
   const [keyMsg, setKeyMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
@@ -91,8 +91,9 @@ export default function SettingsPage() {
       const body: Record<string, string> = {};
       if (keyInputs.gemini.trim()) body.gemini = keyInputs.gemini.trim();
       if (keyInputs.alibaba.trim()) body.alibaba = keyInputs.alibaba.trim();
+      if (keyInputs.alibaba_base.trim()) body.alibaba_base = keyInputs.alibaba_base.trim();
       if (Object.keys(body).length === 0) {
-        setKeyMsg({ type: "err", text: "أدخل مفتاحاً واحداً على الأقل" });
+        setKeyMsg({ type: "err", text: "أدخل مفتاحاً أو رابط endpoint واحداً على الأقل" });
         setKeySaving(false);
         return;
       }
@@ -101,7 +102,7 @@ export default function SettingsPage() {
       });
       if (r.ok) {
         await loadKeyStatus();
-        setKeyInputs({ gemini: "", alibaba: "" });
+        setKeyInputs({ gemini: "", alibaba: "", alibaba_base: "" });
         setKeyMsg({ type: "ok", text: "تم حفظ المفاتيح بنجاح في قاعدة البيانات" });
         setTimeout(() => setKeyMsg(null), 3500);
       } else {
@@ -315,7 +316,7 @@ export default function SettingsPage() {
             <div className="space-y-4">
               {([
                 { id: "gemini" as const, label: "Gemini API Key", placeholder: "AIza...", hint: "من Google AI Studio → aistudio.google.com" },
-                { id: "alibaba" as const, label: "Alibaba API Key", placeholder: "sk-...", hint: "من Alibaba DashScope → dashscope.aliyuncs.com" },
+                { id: "alibaba" as const, label: "Alibaba API Key", placeholder: "sk-...", hint: "من Alibaba DashScope أو MaaS endpoint" },
               ]).map(f => (
                 <div key={f.id}>
                   <label className="text-xs text-muted-foreground mb-1.5 block">{f.label}</label>
@@ -341,6 +342,24 @@ export default function SettingsPage() {
                   <p className="text-[10px] text-muted-foreground mt-1">{f.hint}</p>
                 </div>
               ))}
+
+              {/* Alibaba custom endpoint */}
+              <div className="pt-2 border-t border-border/40">
+                <label className="text-xs text-muted-foreground mb-1.5 block">
+                  Alibaba Endpoint (MaaS) — <span className="text-orange-400">اتركه فارغاً لاستخدام DashScope الافتراضي</span>
+                </label>
+                <Input
+                  type="text"
+                  value={keyInputs.alibaba_base}
+                  onChange={e => setKeyInputs(p => ({ ...p, alibaba_base: e.target.value }))}
+                  placeholder="https://ws-xxxx.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"
+                  className="text-xs font-mono"
+                  dir="ltr"
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  استخدم هذا عند توفّر workspace خاص بـ MaaS بدلاً من DashScope العام
+                </p>
+              </div>
             </div>
 
             <Button onClick={saveApiKeys} disabled={keySaving} className="gap-1.5 w-full mt-2">
