@@ -20,6 +20,8 @@ import {
   BarChart3, FileText, Cpu, Search, Lightbulb, Shield,
   Radio, Star, Clock, Hash, Scissors, FlaskConical, RotateCcw,
   ChevronRight, AlertCircle, Info, ArrowRight, GitCompare,
+  Volume2, ImageIcon, Loader2, ThumbsUp, ThumbsDown, Copy,
+  Music2, Sparkles, Mic,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -43,7 +45,89 @@ const NEWS_CAT_AR: Record<string, string> = {
   image: "صور", audio: "صوت", ai: "ذكاء اصطناعي",
 };
 
-type ChatMsg = { role: "user" | "billie"; text: string; model?: string; ts: string; loading?: boolean };
+type ChatMsg = {
+  role: "user" | "billie";
+  text: string;
+  model?: string;
+  ts: string;
+  loading?: boolean;
+  mediaType?: "image" | "audio";
+  mediaUrl?: string;
+  mediaLoading?: boolean;
+  suggestions?: string[];
+};
+
+function detectImageIntent(text: string): boolean {
+  return /(?:ولّد|ولد|اصنع|أنشئ|ارسم|أريد|اعطيني|صمّم|أنتج|عمل)\s*(?:لي\s*)?(?:صورة|صور|لوحة|رسمة|مشهد|صورة\s*لـ)/i.test(text) ||
+    /(?:generate|create|draw|make|design|render)\s*(?:an?\s*)?(?:image|picture|photo|illustration)/i.test(text);
+}
+function detectAudioIntent(text: string): boolean {
+  return /(?:ولّد|ولد|اقرأ|اسمعني|اعطيني|أريد|نطّق|تكلّم|اقرأ\s*لي)\s*(?:لي\s*)?(?:صوت|مقطع\s*صوت|تسجيل|الصوت|صوتياً)/i.test(text) ||
+    /(?:read|speak|voice|tts|say\s*this|generate\s*audio|narrate)/i.test(text);
+}
+function buildSuggestions(text: string): string[] {
+  const chips: string[] = [];
+  if (/توص|أنصح|أقترح|ينبغي|يجب/i.test(text)) { chips.push("كيف أنفّذ ذلك؟"); chips.push("عرض الأولويات"); }
+  if (/مشكلة|خطأ|فشل|تنبيه|تحذير|أعطال/i.test(text)) { chips.push("السبب الجذري"); chips.push("الحل الفوري"); }
+  if (/تحليل|تقرير|مؤشر|إحصاء/i.test(text)) { chips.push("تعمّق أكثر"); chips.push("خطة التحسين"); }
+  if (/وكيل|agent/i.test(text) && !/مشكلة/.test(text)) chips.push("تفاصيل الوكلاء");
+  if (/أخبار|تطور|إطلاق|نموذج/i.test(text)) { chips.push("تأثير على ACIS"); chips.push("هل نُحدّث النماذج؟"); }
+  if (chips.length < 2) { chips.push("أخبريني المزيد"); chips.push("ما الخطوات التالية؟"); }
+  return chips.slice(0, 4);
+}
+function hasRecommendation(text: string): boolean {
+  return /توص|خطة\s*(?:عمل|تطوير)|أقترح\s*(?:أن|عليك)|أنصح\s*بـ|يمكنني\s*(?:تنفيذ|المساعدة)/i.test(text);
+}
+function renderInlineFmt(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((p, i) =>
+    p.startsWith("**") && p.endsWith("**")
+      ? <strong key={i} className="font-bold text-foreground">{p.slice(2, -2)}</strong>
+      : <span key={i}>{p}</span>
+  );
+}
+function formatBillieText(text: string) {
+  const lines = text.split("\n");
+  const elements: React.ReactNode[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) { elements.push(<div key={i} className="h-1" />); i++; continue; }
+    if (/^[═─━]{3,}/.test(trimmed)) {
+      const title = trimmed.replace(/^[═─━\s]+/, "").replace(/[═─━\s]+$/, "");
+      if (title) elements.push(
+        <div key={i} className="flex items-center gap-2 my-2">
+          <div className="h-px flex-1 bg-primary/20" />
+          <span className="text-[10px] font-mono text-primary/60 uppercase tracking-widest">{title}</span>
+          <div className="h-px flex-1 bg-primary/20" />
+        </div>
+      );
+      i++; continue;
+    }
+    if (/^[•·▸▶\-]\s+/.test(trimmed)) {
+      elements.push(
+        <div key={i} className="flex items-start gap-2 my-0.5">
+          <div className="w-1.5 h-1.5 rounded-full bg-primary/70 mt-[7px] shrink-0" />
+          <span className="text-sm leading-relaxed flex-1">{renderInlineFmt(trimmed.replace(/^[•·▸▶\-]\s+/, ""))}</span>
+        </div>
+      );
+      i++; continue;
+    }
+    if (/^\d+[.)]\s+/.test(trimmed)) {
+      const num = trimmed.match(/^(\d+)/)?.[1] || "·";
+      elements.push(
+        <div key={i} className="flex items-start gap-2 my-1">
+          <span className="min-w-[20px] h-5 rounded-full bg-primary/15 flex items-center justify-center text-[10px] font-bold text-primary shrink-0 mt-0.5">{num}</span>
+          <span className="text-sm leading-relaxed flex-1">{renderInlineFmt(trimmed.replace(/^\d+[.)]\s+/, ""))}</span>
+        </div>
+      );
+      i++; continue;
+    }
+    elements.push(<p key={i} className="text-sm leading-relaxed my-0.5 text-foreground/90">{renderInlineFmt(trimmed)}</p>);
+    i++;
+  }
+  return <div className="space-y-0">{elements}</div>;
+}
 
 const QUICK_ACTIONS = [
   { icon: BarChart3,      label: "تحليل النظام الكامل",         prompt: "قومي بتحليل شامل للنظام الآن وأعطيني تقريراً مفصلاً بالحالة والتوصيات.", color: "text-primary border-primary/30 bg-primary/5 hover:bg-primary/15" },
@@ -134,8 +218,15 @@ export default function BilliePage() {
 
   const sendChat = useCallback(async (text: string) => {
     if (!text.trim() || chatLoading) return;
+    const wantsImage = detectImageIntent(text);
+    const wantsAudio = detectAudioIntent(text);
+
     const userMsg: ChatMsg = { role: "user", text: text.trim(), ts: new Date().toISOString() };
-    const streamingMsg: ChatMsg = { role: "billie", text: "", ts: new Date().toISOString(), loading: true };
+    const streamingMsg: ChatMsg = {
+      role: "billie", text: "", ts: new Date().toISOString(), loading: true,
+      mediaType: wantsImage ? "image" : wantsAudio ? "audio" : undefined,
+      mediaLoading: wantsImage || wantsAudio,
+    };
     setChatHistory(h => [...h, userMsg, streamingMsg]);
     setChatInput("");
     setChatLoading(true);
@@ -145,6 +236,36 @@ export default function BilliePage() {
       .slice(-8)
       .map(m => ({ role: m.role === "user" ? "user" : "model", text: m.text }));
 
+    // ── Media generation (concurrent) ──
+    if (wantsImage || wantsAudio) {
+      const mediaEndpoint = wantsImage ? `${BASE}/api/billie/generate-image` : `${BASE}/api/billie/tts-chat`;
+      const mediaBody = wantsImage
+        ? { prompt: text.trim() }
+        : { text: text.replace(/(?:ولّد|ولد|اقرأ|نطّق)\s*(?:لي\s*)?(?:صوت[:\s]*)?/i, "").trim().slice(0, 500) };
+
+      fetch(mediaEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(mediaBody),
+      }).then(r => r.json()).then(result => {
+        setChatHistory(h => {
+          const copy = [...h];
+          const li = copy.length - 1;
+          if (copy[li]?.role === "billie") {
+            copy[li] = { ...copy[li], mediaLoading: false, ...(result?.filename ? { mediaUrl: `${BASE}/api/media/${result.filename}` } : {}) };
+          }
+          return copy;
+        });
+      }).catch(() => {
+        setChatHistory(h => {
+          const copy = [...h];
+          if (copy[copy.length - 1]?.role === "billie") copy[copy.length - 1] = { ...copy[copy.length - 1], mediaLoading: false };
+          return copy;
+        });
+      });
+    }
+
+    // ── Text stream ──
     try {
       const r = await fetch(`${BASE}/api/billie/stream`, {
         method: "POST",
@@ -157,7 +278,6 @@ export default function BilliePage() {
       if (!reader) throw new Error("لا يوجد stream");
       const dec = new TextDecoder();
       let buf = "";
-      let finalModel = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -176,10 +296,16 @@ export default function BilliePage() {
                 return copy;
               });
             } else if (ev.type === "done") {
-              finalModel = ev.model;
+              const suggs = buildSuggestions(ev.text || "");
               setChatHistory(h => {
                 const copy = [...h];
-                copy[copy.length - 1] = { role: "billie", text: ev.text, model: ev.model, ts: ev.timestamp || new Date().toISOString() };
+                const prev = copy[copy.length - 1];
+                copy[copy.length - 1] = {
+                  role: "billie", text: ev.text, model: ev.model,
+                  ts: ev.timestamp || new Date().toISOString(),
+                  suggestions: suggs,
+                  mediaType: prev.mediaType, mediaUrl: prev.mediaUrl, mediaLoading: prev.mediaLoading,
+                };
                 return copy;
               });
             } else if (ev.type === "error") {
@@ -189,7 +315,6 @@ export default function BilliePage() {
         }
       }
     } catch (err: any) {
-      // Fallback to non-streaming chat
       try {
         const r2 = await fetch(`${BASE}/api/billie/chat`, {
           method: "POST",
@@ -198,9 +323,16 @@ export default function BilliePage() {
         });
         const data = await r2.json();
         if (!r2.ok) throw new Error(data.error || "فشل الاتصال");
+        const suggs = buildSuggestions(data.reply || "");
         setChatHistory(h => {
           const copy = [...h];
-          copy[copy.length - 1] = { role: "billie", text: data.reply, model: data.model, ts: data.timestamp || new Date().toISOString() };
+          const prev = copy[copy.length - 1];
+          copy[copy.length - 1] = {
+            role: "billie", text: data.reply, model: data.model,
+            ts: data.timestamp || new Date().toISOString(),
+            suggestions: suggs,
+            mediaType: prev.mediaType, mediaUrl: prev.mediaUrl, mediaLoading: prev.mediaLoading,
+          };
           return copy;
         });
       } catch (err2: any) {
@@ -473,51 +605,158 @@ export default function BilliePage() {
       {/* ── CHAT TAB ── */}
       {tab === "chat" && (
         <div className="flex flex-col gap-3">
-          {/* Messages */}
-          <div className="bg-card border border-border/50 rounded overflow-hidden flex flex-col" style={{ height: "420px" }}>
-            <div className="flex items-center justify-between px-4 py-2 border-b border-border/30 bg-secondary/20">
-              <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                بيليه متصلة — gemini-2.5-pro
+
+          {/* ── Chat Container ── */}
+          <div className="relative rounded-2xl border border-primary/20 bg-card/90 overflow-hidden flex flex-col shadow-xl shadow-primary/5" style={{ height: "540px" }}>
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-primary/15 bg-gradient-to-l from-primary/8 via-primary/4 to-transparent shrink-0">
+              <div className="flex items-center gap-2">
+                <button onClick={() => setChatHistory([{ role: "billie", text: "تم مسح المحادثة. كيف يمكنني مساعدتك اليوم؟", ts: new Date().toISOString() }])}
+                  className="text-[10px] text-muted-foreground hover:text-rose-400 font-mono flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-rose-500/10 transition-all border border-transparent hover:border-rose-500/20">
+                  <RotateCcw size={9} /> مسح
+                </button>
+                <div className="w-px h-4 bg-border/40" />
+                <span className="text-[9px] font-mono text-muted-foreground/50 flex items-center gap-1">
+                  <Mic size={8} /> اطلب صورة أو صوت مباشرةً
+                </span>
               </div>
-              <button onClick={() => setChatHistory([{ role: "billie", text: "تم مسح المحادثة. كيف يمكنني مساعدتك؟", ts: new Date().toISOString() }])}
-                className="text-[10px] text-muted-foreground hover:text-foreground font-mono flex items-center gap-1">
-                <X size={10} /> مسح
-              </button>
+              <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground">
+                  <span className="text-primary/60 text-[9px]">gemini-2.5-pro</span>
+                  <span className="text-border/60">·</span>
+                  <span>بيليه</span>
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                </div>
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/30 flex items-center justify-center shadow-sm shadow-primary/20">
+                  <Bot size={15} className="text-primary" />
+                </div>
+              </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-5" style={{ scrollbarWidth: "thin", scrollbarColor: "rgba(99,102,241,0.15) transparent" }}>
               {chatHistory.map((msg, i) => (
                 <div key={i} className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
-                  <div className={`w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-xs border ${
+
+                  {/* Avatar */}
+                  <div className={`w-8 h-8 rounded-xl shrink-0 flex items-center justify-center border shadow-sm ${
                     msg.role === "billie"
-                      ? "bg-primary/10 border-primary/30 text-primary"
-                      : "bg-secondary border-border text-muted-foreground"
+                      ? "bg-gradient-to-br from-primary/20 to-primary/5 border-primary/30 text-primary shadow-primary/15"
+                      : "bg-secondary/80 border-border/40 text-muted-foreground"
                   }`}>
-                    {msg.role === "billie" ? <Bot size={14} /> : <User size={14} />}
+                    {msg.role === "billie" ? <Bot size={15} /> : <User size={14} />}
                   </div>
-                  <div className={`max-w-[78%] ${msg.role === "user" ? "text-right" : "text-right"}`}>
-                    {msg.loading ? (
-                      <div className="flex gap-1 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+
+                  {/* Content */}
+                  <div className={`flex-1 max-w-[83%] flex flex-col gap-2 ${msg.role === "user" ? "items-end" : "items-start"}`}>
+
+                    {/* Loading dots */}
+                    {msg.loading && (
+                      <div className="flex gap-1.5 items-center px-4 py-3 rounded-2xl bg-primary/6 border border-primary/15 shadow-sm">
                         {[0,1,2].map(d => (
-                          <div key={d} className="w-2 h-2 rounded-full bg-primary/60 animate-bounce"
-                            style={{ animationDelay: `${d * 0.15}s` }} />
+                          <div key={d} className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: `${d*0.18}s` }} />
                         ))}
-                      </div>
-                    ) : (
-                      <div className={`px-4 py-3 rounded-xl text-sm leading-relaxed whitespace-pre-wrap ${
-                        msg.role === "billie"
-                          ? "bg-primary/5 border border-primary/20 text-foreground"
-                          : "bg-secondary border border-border text-foreground"
-                      }`}>
-                        {msg.text}
+                        <span className="text-[11px] text-muted-foreground/60 font-mono mr-1">بيليه تفكّر…</span>
                       </div>
                     )}
-                    <div className="flex items-center gap-2 mt-1 text-[9px] font-mono text-muted-foreground/60"
-                      style={{ justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
-                      {msg.model && <span className="text-primary/50">{msg.model}</span>}
-                      <span>{new Date(msg.ts).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })}</span>
-                    </div>
+
+                    {/* Main bubble */}
+                    {!msg.loading && msg.text && (
+                      <div className={`w-full px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+                        msg.role === "billie"
+                          ? "bg-gradient-to-br from-primary/8 via-primary/5 to-transparent border border-primary/15 shadow-sm shadow-primary/5 text-right"
+                          : "bg-secondary/60 border border-border/40 text-right"
+                      }`}>
+                        {msg.role === "billie" ? formatBillieText(msg.text) : <p className="leading-relaxed">{msg.text}</p>}
+                      </div>
+                    )}
+
+                    {/* Media: loading state */}
+                    {msg.mediaLoading && (
+                      <div className="w-full flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-secondary/40 border border-border/30">
+                        <Loader2 size={13} className="animate-spin text-primary shrink-0" />
+                        <span className="text-xs text-muted-foreground font-mono">
+                          {msg.mediaType === "image" ? "جارٍ توليد الصورة عبر Gemini…" : "جارٍ توليد المقطع الصوتي…"}
+                        </span>
+                        <div className="flex gap-0.5 mr-auto">
+                          {[0,1,2,3].map(d => (
+                            <div key={d} className="w-1 h-3 rounded-full bg-primary/30 animate-bounce" style={{ animationDelay: `${d*0.1}s` }} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Media: image preview */}
+                    {msg.mediaUrl && msg.mediaType === "image" && (
+                      <div className="w-full rounded-2xl overflow-hidden border border-primary/20 shadow-lg shadow-primary/8">
+                        <img src={msg.mediaUrl} alt="صورة مولّدة" className="w-full max-h-72 object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                        <div className="px-3 py-2 bg-gradient-to-l from-primary/8 to-transparent border-t border-primary/10 flex items-center gap-1.5">
+                          <ImageIcon size={10} className="text-primary/60" />
+                          <span className="text-[10px] font-mono text-primary/50">صورة مولّدة • Gemini AI</span>
+                          <a href={msg.mediaUrl} download target="_blank" rel="noopener noreferrer"
+                            className="mr-auto text-[10px] font-mono text-primary/50 hover:text-primary flex items-center gap-1 px-2 py-0.5 rounded hover:bg-primary/10 transition-colors">
+                            <ExternalLink size={8} /> تحميل
+                          </a>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Media: audio player */}
+                    {msg.mediaUrl && msg.mediaType === "audio" && (
+                      <div className="w-full rounded-2xl border border-emerald-500/20 bg-gradient-to-l from-emerald-500/8 to-transparent p-3.5">
+                        <div className="flex items-center gap-1.5 mb-2.5">
+                          <div className="w-6 h-6 rounded-lg bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center">
+                            <Volume2 size={11} className="text-emerald-400" />
+                          </div>
+                          <span className="text-[10px] font-mono text-emerald-400/80">مقطع صوتي • Gemini TTS</span>
+                        </div>
+                        <audio controls src={msg.mediaUrl} className="w-full h-9 rounded-lg" />
+                      </div>
+                    )}
+
+                    {/* Meta: time + model */}
+                    {!msg.loading && (
+                      <div className={`flex items-center gap-2 text-[9px] font-mono text-muted-foreground/40 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
+                        {msg.model && <span className="text-primary/35">{msg.model}</span>}
+                        <span>{new Date(msg.ts).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })}</span>
+                      </div>
+                    )}
+
+                    {/* Billie actions: approve/reject + copy */}
+                    {msg.role === "billie" && msg.text && !msg.loading && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {hasRecommendation(msg.text) && (
+                          <>
+                            <button onClick={() => sendChat("موافق، نفّذ هذه الخطة وأخبريني بالنتائج")} disabled={chatLoading}
+                              className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/20 transition-all font-mono disabled:opacity-40">
+                              <ThumbsUp size={9} /> موافق
+                            </button>
+                            <button onClick={() => sendChat("لا أوافق على هذا المقترح، قدّمي بديلاً مختلفاً")} disabled={chatLoading}
+                              className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/25 text-red-400 hover:bg-red-500/20 transition-all font-mono disabled:opacity-40">
+                              <ThumbsDown size={9} /> رفض
+                            </button>
+                          </>
+                        )}
+                        <button onClick={() => navigator.clipboard.writeText(msg.text)}
+                          className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full bg-secondary/50 border border-border/30 text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-all font-mono">
+                          <Copy size={9} /> نسخ
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Suggestion chips */}
+                    {msg.role === "billie" && (msg.suggestions?.length ?? 0) > 0 && !msg.loading && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {(msg.suggestions || []).map((s, si) => (
+                          <button key={si} onClick={() => sendChat(s)} disabled={chatLoading}
+                            className="flex items-center gap-1 text-[10px] px-3 py-1.5 rounded-full border border-border/35 text-muted-foreground bg-secondary/30 hover:text-foreground hover:border-primary/40 hover:bg-primary/8 transition-all font-mono disabled:opacity-40">
+                            <Sparkles size={8} className="text-primary/50" />
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -525,31 +764,49 @@ export default function BilliePage() {
             </div>
           </div>
 
-          {/* Quick action buttons */}
+          {/* ── Quick Actions (modern card grid) ── */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {QUICK_ACTIONS.map(a => (
               <button key={a.label} onClick={() => sendChat(a.prompt)} disabled={chatLoading}
-                className={`flex items-center gap-2 p-2.5 rounded border text-xs text-right transition-colors disabled:opacity-50 ${a.color}`}>
-                <a.icon size={13} className="shrink-0" />
-                <span className="leading-tight">{a.label}</span>
+                className={`group flex items-center gap-2 p-2.5 rounded-xl border text-xs text-right transition-all duration-200 disabled:opacity-40 hover:scale-[1.02] active:scale-[0.98] ${a.color}`}>
+                <div className="w-6 h-6 rounded-lg flex items-center justify-center bg-current/10 shrink-0 group-hover:scale-110 transition-transform">
+                  <a.icon size={12} />
+                </div>
+                <span className="leading-tight font-medium flex-1">{a.label}</span>
               </button>
             ))}
           </div>
 
-          {/* Input */}
+          {/* ── Media Quick Triggers ── */}
+          <div className="flex gap-2">
+            <button onClick={() => sendChat("ولّد لي صورة لمشهد سينمائي ليلي مع أضواء المدينة")} disabled={chatLoading}
+              className="flex items-center gap-1.5 text-[11px] px-3 py-2 rounded-xl border border-purple-500/30 bg-purple-500/8 text-purple-400 hover:bg-purple-500/15 transition-all font-mono disabled:opacity-40">
+              <ImageIcon size={11} /> توليد صورة
+            </button>
+            <button onClick={() => sendChat("ولّد لي مقطع صوتي: مرحباً بكم في نظام ACIS للإنتاج السينمائي")} disabled={chatLoading}
+              className="flex items-center gap-1.5 text-[11px] px-3 py-2 rounded-xl border border-emerald-500/30 bg-emerald-500/8 text-emerald-400 hover:bg-emerald-500/15 transition-all font-mono disabled:opacity-40">
+              <Volume2 size={11} /> توليد صوت
+            </button>
+            <button onClick={() => sendChat("ولّد لي موسيقى تصويرية: أوركسترا دراماتيكية للأكشن")} disabled={chatLoading}
+              className="flex items-center gap-1.5 text-[11px] px-3 py-2 rounded-xl border border-sky-500/30 bg-sky-500/8 text-sky-400 hover:bg-sky-500/15 transition-all font-mono disabled:opacity-40">
+              <Music2 size={11} /> موسيقى تصويرية
+            </button>
+          </div>
+
+          {/* ── Input ── */}
           <form onSubmit={handleChatSubmit} className="flex gap-2">
             <button type="submit" disabled={chatLoading || !chatInput.trim()}
-              className="shrink-0 w-10 h-10 rounded-lg bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-40 hover:bg-primary/90 transition-colors">
+              className="shrink-0 w-11 h-11 rounded-xl bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-40 hover:bg-primary/90 active:scale-95 transition-all shadow-lg shadow-primary/25">
               {chatLoading ? <RefreshCw size={16} className="animate-spin" /> : <Send size={16} />}
             </button>
             <Textarea
               value={chatInput}
               onChange={e => setChatInput(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(chatInput); } }}
-              placeholder="اكتب رسالتك لبيليه… (Enter للإرسال، Shift+Enter لسطر جديد)"
+              placeholder="اكتب رسالتك لبيليه… اطلب منها تحليلاً أو ولّد صورة أو مقطع صوتي (Enter للإرسال)"
               dir="rtl"
               rows={2}
-              className="flex-1 text-right resize-none text-sm"
+              className="flex-1 text-right resize-none text-sm rounded-xl border-primary/15 focus:border-primary/35 bg-secondary/20 placeholder:text-muted-foreground/40"
               disabled={chatLoading}
             />
           </form>

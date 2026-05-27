@@ -3,7 +3,8 @@ import { db } from "@workspace/db";
 import { agentsTable, systemAlertsTable, complaintsTable, activityTable, agentPatchesTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { callAIForTask, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
+import { callAIForTask, callGeminiTTS, callGeminiImageGen, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
+import { saveTtsAudio, saveImageFile, extractTtsScript } from "../lib/media.js";
 import { broadcast } from "../lib/ws.js";
 
 const router = Router();
@@ -682,6 +683,55 @@ router.get("/patches", async (req, res) => {
     created_at: p.created_at?.toISOString() || new Date().toISOString(),
     rolled_back_at: p.rolled_back_at?.toISOString() || null,
   })));
+});
+
+// ══════════════════════════════════════════════════════════════
+//  توليد الوسائط — Image & TTS Generation for Billie Chat
+// ══════════════════════════════════════════════════════════════
+
+router.post("/generate-image", async (req, res) => {
+  const { prompt } = req.body as { prompt?: string };
+  if (!prompt?.trim()) return res.status(400).json({ error: "prompt مطلوب" });
+
+  try {
+    console.log(`[Billie/ImageGen] توليد صورة: "${prompt.slice(0, 80)}"`);
+    const result = await callGeminiImageGen(prompt.trim());
+    if (!result?.imageData) return res.status(502).json({ error: "فشل توليد الصورة — تحقق من GEMINI_API_KEY" });
+
+    const filename = saveImageFile(`billie-img-${randomUUID()}`, result.imageData, result.mimeType);
+    await db.insert(activityTable).values({
+      id: randomUUID(), type: "agent_completed",
+      title: "بيليه ولّدت صورة",
+      description: prompt.slice(0, 120),
+    });
+    res.json({ filename, caption: result.caption || "", generated_at: new Date().toISOString() });
+  } catch (err: any) {
+    console.error("[Billie/ImageGen] خطأ:", err?.message);
+    res.status(500).json({ error: err?.message || "فشل توليد الصورة" });
+  }
+});
+
+router.post("/tts-chat", async (req, res) => {
+  const { text, voice = "Charon" } = req.body as { text?: string; voice?: string };
+  if (!text?.trim()) return res.status(400).json({ error: "text مطلوب" });
+
+  try {
+    const script = extractTtsScript(text.trim(), 600);
+    console.log(`[Billie/TTS-Chat] توليد صوت (${script.length} حرف)`);
+    const ttsResult = await callGeminiTTS(script, voice);
+    if (!ttsResult?.audioData) return res.status(502).json({ error: "فشل توليد الصوت — تحقق من GEMINI_API_KEY" });
+
+    const filename = saveTtsAudio(`billie-tts-${randomUUID()}`, ttsResult.audioData, ttsResult.mimeType);
+    await db.insert(activityTable).values({
+      id: randomUUID(), type: "agent_completed",
+      title: "بيليه ولّدت مقطع صوتي",
+      description: script.slice(0, 80),
+    });
+    res.json({ filename, generated_at: new Date().toISOString() });
+  } catch (err: any) {
+    console.error("[Billie/TTS-Chat] خطأ:", err?.message);
+    res.status(500).json({ error: err?.message || "فشل توليد الصوت" });
+  }
 });
 
 export default router;

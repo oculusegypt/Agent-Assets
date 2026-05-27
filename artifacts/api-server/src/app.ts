@@ -13,6 +13,9 @@ app.use("/api/media", express.static(mediaDir, {
     if (filePath.endsWith(".wav")) res.setHeader("Content-Type", "audio/wav");
     if (filePath.endsWith(".mp3")) res.setHeader("Content-Type", "audio/mpeg");
     if (filePath.endsWith(".mp4")) res.setHeader("Content-Type", "video/mp4");
+    if (filePath.endsWith(".png")) res.setHeader("Content-Type", "image/png");
+    if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg")) res.setHeader("Content-Type", "image/jpeg");
+    if (filePath.endsWith(".webp")) res.setHeader("Content-Type", "image/webp");
     res.setHeader("Cache-Control", "public, max-age=86400");
     res.setHeader("Accept-Ranges", "bytes");
   },

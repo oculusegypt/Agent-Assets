@@ -1,0 +1,216 @@
+انشاء اجعل بيليه يستطيع التعديل علي كود الوكلاء والوكلاء المساعدين برمجيا لتعديل مشاكل مباشره من خلاله وذلك باضاة الادوات والصلاحيات والمهارات اللزمه والقوانين الصارمه لتوفير التوكنز واتباع اسلوب مبرمج تقني محترف
+
+6 minutes ago
+
+Show less
+
+Planning Billie's agent editing capabilities (19 seconds)
+The user wants to give Billie the ability to programmatically edit agent code (both agents and sub-agents) to fix problems directly. This involves:
+
+Tools/Capabilities for Billie:
+
+Read agent source code
+Write/patch agent configurations (system prompts, task types, models)
+Update agent status, model assignments
+Apply code patches to agent logic
+Validate changes before applying
+Strict Rules (to save tokens):
+
+Only modify what's necessary (minimal changes)
+Use targeted edits, not full rewrites
+Log all changes for audit trail
+Require justification for each change
+Include rollback capability
+Implementation:
+
+New API endpoint: /api/billie/code-edit — Billie analyzes agent code and applies targeted patches
+New API endpoint: /api/billie/agent-patch — for applying specific patches to agent configs
+New API endpoint: /api/billie/agent-code — for reading agent code/prompts
+Frontend: New "Code Surgery" panel in Billie page where Billie can diagnose and propose code changes
+DB: New table for agent_patches to track all code modifications
+Now I'm thinking through what agent code actually consists of in ACIS — system prompts, model configurations, and task definitions are the main components that need to be editable.
+
+For a practical approach that keeps things safe and token-efficient, Billie can modify system prompts through database overrides, update agent configurations, and create structured patch records rather than directly editing TypeScript files. I'll need to add a new database table to store these patches as versioned records.
+
+Now I'm mapping out the API endpoints Billie will use to fetch agent configurations, propose code modifications, apply or rollback patches, and retrieve patch history. The frontend will have a dedicated interface where Billie can analyze agents and present proposed changes.
+
+I need to check what database tables and page structures already exist, then implement this in phases—first adding the necessary tables for tracking patches and custom prompts, then building out the API layer, and finally creating the UI. The key is keeping Billie's token usage low by having her work with targeted, minimal prompts rather than analyzing entire codebases.
+
+طلب ممتاز — أبني نظام "جراحة الكود" لبيليه الآن. أستكشف الكود الحالي أولاً:
+
+
+Show less
+
+Opened billie.tsx
+
+Ran cat
+
+Ran wc
+
+Analyzing database schema requirements
+Let me check the DB schema and billie page structure to understand what exists before building the new feature.
+
+
+Ran find
+
+Opened billie.tsx
+
+Planning API for agent code editing (8 seconds)
+The user wants Billie to be able to programmatically edit agent code and sub-agent configurations to fix issues directly. This is a significant feature requiring:
+
+Backend API - New endpoints for Billie to:
+
+Read agent configurations/prompts
+Diagnose agent issues (AI-powered analysis)
+Apply targeted patches (update system prompts, task types, models, status)
+Roll back patches
+Track audit trail of all changes
+DB Schema - New tables:
+
+agent_prompt_overrides — custom system prompts per agent
+agent_patches — audit trail of all code modifications
+Frontend UI - A new "جراحة الكود" tab in billie.tsx for the interface. Now I need to examine the existing database schema and billie.tsx to understand the current structure before planning the full implementation, keeping in mind the strict token-saving constraints around reading only necessary agent data, making targeted single-field patches, using minimal AI prompts, logging all changes with justification, and ensuring rollback capability.
+
+
+Opened index.ts
+
+Opened billie.tsx
+
+Planning Billie's code surgery feature (13 seconds)
+Now I have a full picture. Let me plan and implement the "Code Surgery" feature for Billie. Here's my plan:
+
+Architecture:
+
+DB Schema — Add agent_patches table to track all modifications
+API — New endpoints in billie.ts:
+GET /api/billie/agent-code/:agentId — read agent config + effective prompt
+POST /api/billie/diagnose — AI-powered diagnosis of agent issues
+POST /api/billie/patch — apply a patch (update prompt/model/status/capabilities)
+POST /api/billie/rollback/:patchId — rollback a patch
+GET /api/billie/patches — list all patches
+Frontend — New "🔧 جراحة الكود" tab in billie.tsx
+Strict Token-Saving Rules (built into Billie's tools):
+
+Billie only reads the specific agent's data (not all agents)
+Diagnosis prompt is compact and focused
+Patches are atomic (one field at a time)
+AI model used: text_simple for status checks, reasoning for deep diagnosis
+Max 3 patch proposals per diagnosis
+Each patch tracks the field being modified along with its old and new values plus the reasoning behind the change. The patchable fields include the agent's system prompt, status, model assignment, capabilities, sub-agents, and descriptions in both English and Arabic. I'm designing the database schema to store these patches with metadata about which agent they apply to, what type of change they represent, and who applied them.
+
+Now I need to implement this across three areas: adding the table to the schema, creating the API routes in the backend, and building out the UI in the frontend. Let me check the existing tab structure in the Billie component first so I can add the patches tab consistently.
+
+لدي كل ما أحتاجه. أبني الآن نظام "جراحة الكود" بالكامل — DB + API + واجهة — بالتوازي:
+
+
+Show less
+
+Opened billie.tsx
+
+Opened billie.tsx
+
+Opened index.ts
+
+Planning feature implementation steps (71 seconds)
+Now I have all the information I need to build the complete "Code Surgery" feature for Billie. Let me plan and implement everything:
+
+Plan
+1. DB Schema - Add agent_patches table
+Add to lib/db/src/schema/index.ts
+
+2. API - Add new routes to billie.ts
+New endpoints:
+
+GET /api/billie/agent-code/:agentId — read agent config + effective prompt
+
+POST /api/billie/diagnose — AI diagnoses agent issues + proposes patches
+
+POST /api/billie/apply-patch — apply a patch
+
+POST /api/billie/rollback-patch/:patchId — rollback
+
+GET /api/billie/patches — list all patches
+
+3. Frontend - New "جراحة الكود" tab in billie.tsx
+Add a new tab with:
+
+Agent selector dropdown
+Diagnose button (calls API, AI analyses agent)
+Shows diagnosis results with proposed patches
+Apply/Rollback buttons per patch
+Patches history list
+Now I'll start implementing this. First, I need to update the database schema to add the patches table.
+
+Then I'll add the API routes to handle patch operations, and finally build out the frontend tab with the agent selector, diagnosis functionality, and patch management UI.
+
+I'm also keeping token usage tight throughout — the diagnosis prompt stays under 500 tokens, the AI reasoning is capped at 1500 tokens, and patch proposals use structured JSON to stay compact. The patchable fields are limited to prompt, status, model, capabilities, and description. Writing the database schema and API routes... Writing API response... Writing the diagnosis endpoint... أنا أفحص بيانات الوكيل الحالية بما فيها حالته ونموذجه ومعدل نجاحه وأوقات الاستجابة والعمليات المنفذة اليوم، مع ملاحظة قدراته والوكلاء المساعدين المتاحين والبرومبت الفعلي المستخدم. أحتاج إلى تحليل أي مشاكل مبلغة وعمليات فاشلة حديثة لتحديد السبب الجذري والخطورة.
+
+Writing diagnostic JSON... Now I'm mapping each patch to include the original value from the agent object, checking the field type to retrieve the correct current value, then preparing to save this diagnostic activity to the database.
+
+Finishing the database insert with the alert title in Arabic and a description containing the severity level and diagnosis summary, then returning the response with the agent ID, model used, token count, and all diagnostic details including the patches with their original values.
+
+Finally handling any errors that occur during diagnosis by logging them and returning a 500 status with an error message.
+
+Now I'm setting up the patch application endpoint that validates the incoming request has all required fields, checks that the agent exists in the database, and verifies the field being updated is in the allowed list...
+
+Handling the field updates... Finishing the database insert for the patch record, then logging the activity update with a broadcast notification to alert other clients that the agent has been modified, and finally returning the patch details in the response.
+
+Now I'm setting up the rollback endpoint that retrieves a patch by ID and validates it hasn't already been rolled back before proceeding with the reversal logic.
+
+Restoring the agent's fields... Writing the patches endpoint...
+
+Now I need to set up the database schema for storing patches and then build out the frontend interface with a surgery tab where users can select an agent, describe issues, and trigger diagnostics. I need to figure out where the database tables get initialized—whether through migrations or direct SQL statements in the server startup code. Let me trace through the project structure to see how the existing tables are set up so I can add the patches table in the same way.
+
+الآن أبني كل شيء بالتوازي — Schema + API + Frontend:
+
+
+Show less
+
+Ran grep
+
+Opened billie.tsx
+
+Planning parallel development tasks
+Now I have all the context I need. Let me build everything in parallel:
+
+Add agentPatchesTable to schema
+Add new routes to billie.ts (agent-code, diagnose, apply-patch, rollback-patch, patches)
+Check how the DB table gets created (look at the index.ts startup)
+Add the Surgery tab to billie.tsx
+Let me check the api-server index.ts to understand initialization, then do everything in parallel.
+
+
+Opened index.ts
+
+Planning Code Surgery system implementation (4 seconds)
+Now I have everything I need. Let me implement the full "Code Surgery" system for Billie. I'll do this in parallel:
+
+Schema - Add agentPatchesTable to lib/db/src/schema/index.ts
+DB Init - Add table creation SQL in the system.ts seed route
+API - Add new routes to artifacts/api-server/src/routes/billie.ts
+Frontend - Add Surgery tab to artifacts/acis-desktop/src/pages/billie.tsx
+Let me check system.ts for the seed function first, then do all edits in parallel.
+
+
+Opened system.ts
+
+Planning Billie Code Surgery implementation (55 seconds)
+Now I have all the context I need. Let me implement the complete "Code Surgery" (جراحة الكود) system for Billie. I'll do all edits in parallel:
+
+Schema - Add agentPatchesTable to lib/db/src/schema/index.ts
+
+API - Add new routes to artifacts/api-server/src/routes/billie.ts
+
+DB Table Creation - Add CREATE TABLE IF NOT EXISTS to the system seed or DB init
+
+Frontend - Add Surgery tab to artifacts/acis-desktop/src/pages/billie.tsx
+
+I'll start by setting up the database table. Since this project uses drizzle with sqlite-proxy directly without a migration runner, I need to add the CREATE TABLE SQL directly in lib/db/src/index.ts right after the SQLite initialization using sqlite.exec(). This is the cleanest approach.
+
+Writing all four changes now...
+
+For the frontend Surgery tab, I'm adding a new section with an agent selector dropdown, an optional issue description textarea, a diagnose button that calls the API, and a results panel displaying severity badges and other diagnostic information.
+
+Setting up the component state... Writing the Surgery tab UI... Writing component markup... Writing component styles... Writing component markup... Writing patch comparison UI... Writing the patches history section... Writing component markup... Writing component updates...
+
+لديّ كل السياق. أكتب كل شيء بالتوازي — Schema + DB + API + Frontend:

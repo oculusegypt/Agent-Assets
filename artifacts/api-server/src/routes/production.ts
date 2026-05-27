@@ -3,9 +3,9 @@ import { db } from "@workspace/db";
 import { projectsTable, generationJobsTable, activityTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { callAIForTask, callGeminiTTS, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
+import { callAIForTask, callGeminiTTS, callGeminiImageGen, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
 import { broadcast } from "../lib/ws.js";
-import { saveTtsAudio, extractTtsScript } from "../lib/media.js";
+import { saveTtsAudio, saveImageFile, extractTtsScript } from "../lib/media.js";
 import { buildCompilationVideo, extractScenes } from "../lib/video.js";
 
 const router = Router();
@@ -237,25 +237,30 @@ router.post("/projects/:projectId/generate", async (req, res) => {
 
 قدّم:
 1. الثيم الصوتي الرئيسي (نوع الصوت، المزاج، الآلات)
-2. مواصفات التعليق الصوتي
-3. نص التعليق الصوتي المقترح (مناسب للقراءة بصوت عالٍ، 3-5 جمل)
-4. توجيهات المؤثرات الصوتية لكل مشهد`
+2. توجيهات المؤثرات الصوتية لكل مشهد
+3. تفاصيل التوزيع الموسيقي والإيقاع العام
+
+[TTS_CHARACTERS_ONLY_START]
+اكتب هنا حوار الشخصيات الرئيسية فقط (3-4 جمل قصيرة) كما تنطقها الشخصيات في المشاهد الدرامية، بصوت الشخصيات لا بصوت الراوي:
+[TTS_CHARACTERS_ONLY_END]`
         );
         aiResult = r.text;
 
-        // ── توليد الصوت الفعلي عبر Gemini TTS ──
+        // ── توليد الصوت الفعلي عبر Gemini TTS — للشخصيات فقط ──
         try {
           const ttsScript = extractTtsScript(aiResult, 550);
-          console.log(`[TTS] بدء توليد الصوت (${ttsScript.length} حرف)…`);
-          const ttsResult = await callGeminiTTS(ttsScript, "Charon");
-          if (ttsResult?.audioData) {
-            const filename = saveTtsAudio(jobId, ttsResult.audioData, ttsResult.mimeType);
-            await db.update(generationJobsTable).set({
-              output_url: filename,
-            }).where(eq(generationJobsTable.id, jobId));
-            console.log(`[TTS] ✓ ملف الصوت محفوظ: ${filename}`);
+          if (ttsScript && ttsScript.length > 30) {
+            console.log(`[TTS] بدء توليد صوت الشخصيات (${ttsScript.length} حرف)…`);
+            const ttsResult = await callGeminiTTS(ttsScript, "Charon");
+            if (ttsResult?.audioData) {
+              const filename = saveTtsAudio(jobId, ttsResult.audioData, ttsResult.mimeType);
+              await db.update(generationJobsTable).set({ output_url: filename }).where(eq(generationJobsTable.id, jobId));
+              console.log(`[TTS] ✓ صوت الشخصيات محفوظ: ${filename}`);
+            } else {
+              console.warn("[TTS] لم يُعَد صوت من Gemini TTS");
+            }
           } else {
-            console.warn("[TTS] لم يُعَد صوت من Gemini TTS");
+            console.warn("[TTS] تخطّي TTS — لا يوجد حوار شخصيات");
           }
         } catch (ttsErr: any) {
           console.warn("[TTS] تحذير: فشل توليد الصوت (غير قاطع):", ttsErr?.message?.slice(0, 100));

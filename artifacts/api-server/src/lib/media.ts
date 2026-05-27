@@ -53,10 +53,26 @@ export function saveTtsAudio(jobId: string, audioData: string, mimeType: string)
   return filename;
 }
 
+// ── Save Image File ────────────────────────────────────────────────────────
+
+export function saveImageFile(jobId: string, imageData: string, mimeType: string): string {
+  const ext = mimeType.includes("png") ? "png" : mimeType.includes("jpeg") || mimeType.includes("jpg") ? "jpg" : "png";
+  const filename = `${jobId}.${ext}`;
+  const buf = Buffer.from(imageData, "base64");
+  fs.writeFileSync(path.join(mediaDir, filename), buf);
+  return filename;
+}
+
 // ── Extract TTS Script from AI Result ─────────────────────────────────────
 
 export function extractTtsScript(aiResult: string, maxChars = 600): string {
   const patterns = [
+    // Priority: character-only TTS block
+    /\[TTS_CHARACTERS_ONLY_START\]\s*\n?([\s\S]+?)\[TTS_CHARACTERS_ONLY_END\]/i,
+    // Character dialogue markers
+    /حوار\s*(?:الشخصيات|التسجيل|الصوتي)[^:\n]*[:：]\s*\n?([\s\S]{30,}?)(?=\n\d+\.|توجيهات|مؤثرات|═|$)/i,
+    /نص\s*(?:الشخصيات|الحوار)[^:\n]*[:：]\s*\n?([\s\S]{30,}?)(?=\n\d+\.|توجيهات|مؤثرات|═|$)/i,
+    // Classic narration markers
     /نص التعليق الصوتي[^:\n]*[:：]\s*\n?([\s\S]{30,}?)(?=\n\d+\.|توجيهات|مؤثرات|$)/i,
     /نص التعليق[^:\n]*[:：]\s*\n?([\s\S]{30,}?)(?=\n\d+\.|توجيهات|مؤثرات|$)/i,
     /التعليق الصوتي[^:\n]*[:：]\s*\n?([\s\S]{30,}?)(?=\n\d+\.|توجيهات|مؤثرات|$)/i,
@@ -70,11 +86,11 @@ export function extractTtsScript(aiResult: string, maxChars = 600): string {
     }
   }
 
-  // Fallback: take the first substantial paragraph
+  // Fallback: take the first substantial paragraph (max 3 lines)
   const paragraphs = aiResult
     .split(/\n{2,}/)
     .map(p => p.trim())
-    .filter(p => p.length > 80 && !/^\d+\.|^[#═─]/.test(p));
+    .filter(p => p.length > 40 && !/^\d+\.|^[#═─]/.test(p));
 
   return (paragraphs[0] || aiResult.slice(0, maxChars)).slice(0, maxChars);
 }

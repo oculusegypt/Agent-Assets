@@ -427,6 +427,39 @@ export async function callAIWithHistory(
   return runTaskAI(taskType, systemPrompt, messages);
 }
 
+/** Image generation using Gemini (gemini-2.0-flash-preview-image-generation) */
+export async function callGeminiImageGen(
+  prompt: string
+): Promise<{ imageData: string; mimeType: string; caption?: string } | null> {
+  try {
+    const gemini = await buildGemini();
+    if (!gemini) return null;
+    const model = gemini.getGenerativeModel({ model: "gemini-2.0-flash-preview-image-generation" });
+    const result = await (model as any).generateContent({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
+    });
+    const parts: any[] = result.response?.candidates?.[0]?.content?.parts || [];
+    let imageData: string | null = null;
+    let mimeType = "image/png";
+    let caption = "";
+    for (const part of parts) {
+      if (part.inlineData?.mimeType?.startsWith("image/")) {
+        imageData = part.inlineData.data;
+        mimeType = part.inlineData.mimeType;
+      } else if (part.text) {
+        caption += part.text;
+      }
+    }
+    if (!imageData) return null;
+    console.log(`[ImageGen] ✓ صورة مولّدة (${mimeType})`);
+    return { imageData, mimeType, caption };
+  } catch (e: any) {
+    console.error("[ImageGen] خطأ في توليد الصورة:", e?.message?.slice(0, 120));
+    return null;
+  }
+}
+
 /** Arabic TTS using Gemini (best quality for Arabic speech) */
 export async function callGeminiTTS(
   text: string,
