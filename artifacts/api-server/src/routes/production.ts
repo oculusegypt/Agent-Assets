@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { projectsTable, generationJobsTable, activityTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { callAI, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
+import { callAIForTask, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
 import { broadcast } from "../lib/ws.js";
 
 const router = Router();
@@ -178,7 +178,8 @@ router.post("/projects/:projectId/generate", async (req, res) => {
       const projType = project.type || "short";
 
       if (safePhase === "script") {
-        const r = await callAI(
+        const r = await callAIForTask(
+          "text_complex",
           AGENT_SYSTEM_PROMPTS["story-architect"],
           `اكتب سيناريو احترافي متكامل بناءً على هذه المعطيات:
 
@@ -194,8 +195,7 @@ router.post("/projects/:projectId/generate", async (req, res) => {
 3. السيناريو الكامل مع الحوار والمشاهد والتوجيهات
 4. ملاحظات المخرج الأساسية
 
-اكتب بأسلوب أدبي راقٍ وسينمائي متقن.`,
-          "pro"
+اكتب بأسلوب أدبي راقٍ وسينمائي متقن.`
         );
         aiResult = r.text;
       } else if (safePhase === "storyboard") {

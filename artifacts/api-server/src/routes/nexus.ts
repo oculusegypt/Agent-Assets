@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { nexusTasksTable, activityTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { callAI } from "../lib/ai.js";
+import { callAIForTask } from "../lib/ai.js";
 import { broadcast } from "../lib/ws.js";
 
 const router = Router();
@@ -232,7 +232,7 @@ router.post("/tasks", async (req, res) => {
     try {
       const prompt = TYPE_PROMPTS[type] || `أنت وكيل NEXUS. نفّذ المهمة التالية باحترافية عالية. أجب بالعربية.`;
       const userMsg = `المهمة: ${title}\n\nالتفاصيل:\n${description}`;
-      const aiRes = await callAI(prompt, userMsg, "flash");
+      const aiRes = await callAIForTask("text_fast", prompt, userMsg);
 
       await db.update(nexusTasksTable).set({
         status: "completed",

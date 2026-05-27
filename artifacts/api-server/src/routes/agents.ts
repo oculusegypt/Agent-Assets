@@ -41,8 +41,9 @@ router.post("/:agentId/execute", async (req, res) => {
   const execId = randomUUID();
   const startTime = Date.now();
 
+  const safeAction = action?.trim() || "تنفيذ مهمة";
   const [exec] = await db.insert(agentExecutionsTable).values({
-    id: execId, agent_id: agentId, action, status: "running", model_used: agent.model,
+    id: execId, agent_id: agentId, action: safeAction, status: "running", model_used: agent.model,
   }).returning();
 
   try {
