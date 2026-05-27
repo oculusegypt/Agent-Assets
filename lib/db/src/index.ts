@@ -27,6 +27,22 @@ const sqlite = new DatabaseSync(DB_PATH);
 sqlite.exec("PRAGMA journal_mode = WAL");
 sqlite.exec("PRAGMA foreign_keys = ON");
 
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS agent_patches (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    patch_type TEXT NOT NULL,
+    field TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    applied_by TEXT NOT NULL DEFAULT 'billie',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at INTEGER DEFAULT (unixepoch()),
+    rolled_back_at INTEGER
+  )
+`);
+
 export const db = drizzle(
   async (sql, params, method) => {
     const stmt = sqlite.prepare(sql);

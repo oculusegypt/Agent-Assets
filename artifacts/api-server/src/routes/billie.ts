@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { agentsTable, systemAlertsTable, complaintsTable, activityTable } from "@workspace/db";
+import { agentsTable, systemAlertsTable, complaintsTable, activityTable, agentPatchesTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { callAIForTask, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
@@ -410,6 +410,278 @@ ${resolution_note ? `ملاحظة الحل: ${resolution_note}` : ""}
     final_response: finalResponse,
     resolved_at: new Date().toISOString(),
   });
+});
+
+// ══════════════════════════════════════════════════════════════
+//  جراحة الكود — Code Surgery Endpoints
+// ══════════════════════════════════════════════════════════════
+
+const PATCHABLE_FIELDS = ["prompt", "status", "model", "description", "descriptionAr", "capabilities", "subagents"] as const;
+type PatchableField = typeof PATCHABLE_FIELDS[number];
+
+// GET /api/billie/agent-code/:agentId — جلب إعدادات وكيل كاملة
+router.get("/agent-code/:agentId", async (req, res) => {
+  const { agentId } = req.params;
+  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId));
+  if (!agent) return res.status(404).json({ error: "الوكيل غير موجود" });
+
+  const patches = await db.select().from(agentPatchesTable)
+    .where(eq(agentPatchesTable.agent_id, agentId))
+    .orderBy(desc(agentPatchesTable.created_at))
+    .limit(10);
+
+  res.json({
+    agent: {
+      id: agent.id,
+      name: agent.name,
+      nameAr: agent.nameAr,
+      status: agent.status,
+      model: agent.model,
+      description: agent.description,
+      descriptionAr: agent.descriptionAr,
+      capabilities: agent.capabilities,
+      subagents: agent.subagents,
+      prompt: agent.prompt || "(يستخدم البرومبت الافتراضي)",
+      system: agent.system,
+      icon: agent.icon,
+      color: agent.color,
+      executions_today: agent.executions_today,
+      success_rate: agent.success_rate,
+      avg_response_ms: agent.avg_response_ms,
+    },
+    recent_patches: patches.map(p => ({
+      ...p,
+      created_at: p.created_at?.toISOString() || new Date().toISOString(),
+      rolled_back_at: p.rolled_back_at?.toISOString() || null,
+    })),
+    patchable_fields: PATCHABLE_FIELDS,
+  });
+});
+
+// POST /api/billie/diagnose — تشخيص ذكي واقتراح تعديلات
+router.post("/diagnose", async (req, res) => {
+  const { agent_id, issue_description } = req.body;
+  if (!agent_id) return res.status(400).json({ error: "agent_id مطلوب" });
+
+  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agent_id));
+  if (!agent) return res.status(404).json({ error: "الوكيل غير موجود" });
+
+  const recentPatches = await db.select().from(agentPatchesTable)
+    .where(eq(agentPatchesTable.agent_id, agent_id))
+    .orderBy(desc(agentPatchesTable.created_at))
+    .limit(5);
+
+  const agentSnapshot = `
+الوكيل: ${agent.nameAr || agent.name} (${agent.id})
+الحالة: ${agent.status}
+النموذج: ${agent.model}
+معدل النجاح: ${agent.success_rate}%
+متوسط الاستجابة: ${agent.avg_response_ms}ms
+التنفيذات اليوم: ${agent.executions_today}
+الوصف: ${agent.descriptionAr || agent.description}
+القدرات: ${JSON.stringify(agent.capabilities)}
+البرومبت الحالي: ${(agent.prompt || AGENT_SYSTEM_PROMPTS[agent.system] || "").substring(0, 400)}
+التعديلات السابقة: ${recentPatches.length > 0 ? recentPatches.map(p => `${p.field}→${p.patch_type}`).join(", ") : "لا يوجد"}
+`;
+
+  const diagnosisPrompt = `أنت بيليه، خبيرة تشخيص وكلاء الذكاء الاصطناعي في نظام ACIS.
+
+بيانات الوكيل:
+${agentSnapshot}
+${issue_description ? `المشكلة المُبلَّغة: ${issue_description}` : ""}
+
+حلّل الوكيل واقترح تعديلات دقيقة. أجب بـ JSON فقط بهذا الشكل:
+{
+  "severity": "critical|high|medium|low",
+  "diagnosis": "تشخيص مختصر (جملة واحدة)",
+  "root_cause": "السبب الجذري",
+  "patches": [
+    {
+      "field": "prompt|status|model|description|descriptionAr|capabilities",
+      "patch_type": "update|fix|optimize",
+      "current_value": "القيمة الحالية",
+      "proposed_value": "القيمة المقترحة",
+      "reason": "سبب التعديل",
+      "priority": "high|medium|low"
+    }
+  ],
+  "summary": "ملخص التوصية للقائد"
+}
+القيود: أقصى 3 تعديلات، ركّز على الأكثر تأثيراً، لا تعدّل ما يعمل بشكل صحيح.`;
+
+  try {
+    const result = await callAIForTask("text_complex", AGENT_SYSTEM_PROMPTS["billie"], diagnosisPrompt);
+
+    let diagnosis: any;
+    try {
+      const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+      diagnosis = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+    } catch {
+      diagnosis = null;
+    }
+
+    if (!diagnosis) {
+      diagnosis = {
+        severity: "medium",
+        diagnosis: "تم تحليل الوكيل — لا توجد مشاكل حرجة",
+        root_cause: "أداء طبيعي",
+        patches: [],
+        summary: result.text.substring(0, 300),
+      };
+    }
+
+    await db.insert(activityTable).values({
+      id: randomUUID(), type: "billie_alert",
+      agent_id, agent_name: agent.nameAr || agent.name,
+      title: `بيليه شخّصت ${agent.nameAr || agent.name}`,
+      description: `الخطورة: ${diagnosis.severity} | ${diagnosis.diagnosis}`,
+    });
+
+    res.json({
+      agent_id,
+      agent_name: agent.nameAr || agent.name,
+      model_used: result.model,
+      tokens_used: result.tokens,
+      ...diagnosis,
+      diagnosed_at: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    console.error("[جراحة الكود] خطأ في التشخيص:", err?.message);
+    res.status(500).json({ error: "فشل التشخيص", detail: err?.message });
+  }
+});
+
+// POST /api/billie/apply-patch — تطبيق تعديل على وكيل
+router.post("/apply-patch", async (req, res) => {
+  const { agent_id, field, new_value, reason, patch_type = "update" } = req.body;
+  if (!agent_id || !field || new_value === undefined || !reason) {
+    return res.status(400).json({ error: "agent_id, field, new_value, reason مطلوبة" });
+  }
+  if (!PATCHABLE_FIELDS.includes(field as PatchableField)) {
+    return res.status(400).json({ error: `الحقل "${field}" غير مسموح بتعديله. الحقول المسموحة: ${PATCHABLE_FIELDS.join(", ")}` });
+  }
+
+  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agent_id));
+  if (!agent) return res.status(404).json({ error: "الوكيل غير موجود" });
+
+  const old_value = JSON.stringify((agent as any)[field] ?? null);
+
+  const updateData: Record<string, any> = {};
+  if (field === "capabilities" || field === "subagents") {
+    try {
+      updateData[field] = typeof new_value === "string" ? JSON.parse(new_value) : new_value;
+    } catch {
+      updateData[field] = new_value;
+    }
+  } else {
+    updateData[field] = new_value;
+  }
+  updateData.updated_at = new Date();
+
+  await db.update(agentsTable).set(updateData).where(eq(agentsTable.id, agent_id));
+
+  const patchId = randomUUID();
+  await db.insert(agentPatchesTable).values({
+    id: patchId,
+    agent_id,
+    patch_type,
+    field,
+    old_value,
+    new_value: typeof new_value === "object" ? JSON.stringify(new_value) : String(new_value),
+    reason,
+    applied_by: "billie",
+    status: "active",
+  });
+
+  await db.insert(activityTable).values({
+    id: randomUUID(), type: "system_update",
+    agent_id, agent_name: agent.nameAr || agent.name,
+    title: `بيليه عدّلت ${agent.nameAr || agent.name}`,
+    description: `الحقل: ${field} | ${reason.substring(0, 120)}`,
+  });
+
+  broadcast("agents_updated");
+  broadcast("activity_updated");
+
+  res.json({
+    success: true,
+    patch_id: patchId,
+    agent_id,
+    field,
+    old_value,
+    new_value: typeof new_value === "object" ? JSON.stringify(new_value) : String(new_value),
+    applied_at: new Date().toISOString(),
+    message: `تم تعديل ${field} للوكيل ${agent.nameAr || agent.name} بنجاح.`,
+  });
+});
+
+// POST /api/billie/rollback-patch/:patchId — التراجع عن تعديل
+router.post("/rollback-patch/:patchId", async (req, res) => {
+  const { patchId } = req.params;
+  const [patch] = await db.select().from(agentPatchesTable).where(eq(agentPatchesTable.id, patchId));
+  if (!patch) return res.status(404).json({ error: "التعديل غير موجود" });
+  if (patch.status === "rolled_back") return res.status(400).json({ error: "التعديل مُتراجَع عنه بالفعل" });
+
+  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, patch.agent_id));
+  if (!agent) return res.status(404).json({ error: "الوكيل غير موجود" });
+
+  if (patch.old_value !== null && patch.old_value !== undefined) {
+    const updateData: Record<string, any> = {};
+    if (patch.field === "capabilities" || patch.field === "subagents") {
+      try { updateData[patch.field] = JSON.parse(patch.old_value); } catch { updateData[patch.field] = patch.old_value; }
+    } else {
+      updateData[patch.field] = patch.old_value === "null" ? null : patch.old_value;
+    }
+    updateData.updated_at = new Date();
+    await db.update(agentsTable).set(updateData).where(eq(agentsTable.id, patch.agent_id));
+  }
+
+  await db.update(agentPatchesTable).set({
+    status: "rolled_back",
+    rolled_back_at: new Date(),
+  }).where(eq(agentPatchesTable.id, patchId));
+
+  await db.insert(activityTable).values({
+    id: randomUUID(), type: "system_update",
+    agent_id: patch.agent_id, agent_name: agent.nameAr || agent.name,
+    title: `بيليه تراجعت عن تعديل ${agent.nameAr || agent.name}`,
+    description: `الحقل: ${patch.field} | استُعيدت القيمة السابقة`,
+  });
+
+  broadcast("agents_updated");
+  broadcast("activity_updated");
+
+  res.json({
+    success: true,
+    patch_id: patchId,
+    agent_id: patch.agent_id,
+    field: patch.field,
+    restored_value: patch.old_value,
+    rolled_back_at: new Date().toISOString(),
+  });
+});
+
+// GET /api/billie/patches — سجل جميع التعديلات
+router.get("/patches", async (req, res) => {
+  const { agent_id } = req.query;
+  let query = db.select().from(agentPatchesTable).orderBy(desc(agentPatchesTable.created_at)).limit(50);
+  if (agent_id) {
+    const patches = await db.select().from(agentPatchesTable)
+      .where(eq(agentPatchesTable.agent_id, String(agent_id)))
+      .orderBy(desc(agentPatchesTable.created_at))
+      .limit(50);
+    return res.json(patches.map(p => ({
+      ...p,
+      created_at: p.created_at?.toISOString() || new Date().toISOString(),
+      rolled_back_at: p.rolled_back_at?.toISOString() || null,
+    })));
+  }
+  const patches = await query;
+  res.json(patches.map(p => ({
+    ...p,
+    created_at: p.created_at?.toISOString() || new Date().toISOString(),
+    rolled_back_at: p.rolled_back_at?.toISOString() || null,
+  })));
 });
 
 export default router;
