@@ -286,7 +286,7 @@ router.post("/projects/:projectId/generate", async (req, res) => {
         status: "completed",
         result: aiResult,
         completed_at: new Date(),
-      } as any).where(eq(generationJobsTable.id, jobId));
+      }).where(eq(generationJobsTable.id, jobId));
 
       await db.insert(activityTable).values({
         id: randomUUID(), type: "agent_completed",
@@ -300,7 +300,7 @@ router.post("/projects/:projectId/generate", async (req, res) => {
         status: "failed",
         result: `خطأ: ${err?.message || "فشل التوليد"}`,
         completed_at: new Date(),
-      } as any).where(eq(generationJobsTable.id, jobId));
+      }).where(eq(generationJobsTable.id, jobId));
     }
   });
 });

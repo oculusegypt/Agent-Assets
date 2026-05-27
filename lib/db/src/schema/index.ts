@@ -87,6 +87,7 @@ export const generationJobsTable = sqliteTable("generation_jobs", {
   model_used: text("model_used").notNull(),
   estimated_seconds: integer("estimated_seconds").notNull().default(30),
   output_url: text("output_url"),
+  result: text("result"),
   started_at: integer("started_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
   completed_at: integer("completed_at", { mode: "timestamp" }),
 });

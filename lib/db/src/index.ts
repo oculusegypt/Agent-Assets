@@ -27,6 +27,10 @@ const sqlite = new DatabaseSync(DB_PATH);
 sqlite.exec("PRAGMA journal_mode = WAL");
 sqlite.exec("PRAGMA foreign_keys = ON");
 
+try {
+  sqlite.exec(`ALTER TABLE generation_jobs ADD COLUMN result TEXT`);
+} catch {}
+
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS agent_patches (
     id TEXT PRIMARY KEY,

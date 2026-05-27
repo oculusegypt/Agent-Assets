@@ -12,6 +12,8 @@ import {
   Film, Clapperboard, Image, Music, Mic, Video,
   Play, Plus, CheckCircle2, Clock, Zap, ChevronLeft, ChevronDown, ChevronUp,
   Star, Cpu, X, FileText, RefreshCw, Trash2, ListVideo, Copy, Check,
+  Users, BookOpen, Camera, Headphones, Wand2, AlignLeft, Layers, LayoutList,
+  VolumeX, Volume2, Sparkles, Hash, GitMerge, Cog,
 } from "lucide-react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 
@@ -55,154 +57,356 @@ const ALL_PHASES = [
   { type: "assembly",   label: "جدول المونتاج النهائي",     icon: Zap },
 ];
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+const PHASE_COLORS: Record<string, string> = {
+  script:     "purple",
+  storyboard: "sky",
+  audio:      "emerald",
+  images:     "orange",
+  video:      "red",
+  music:      "pink",
+  assembly:   "amber",
+};
+
+const PHASE_ICONS_MAP: Record<string, any> = {
+  script:     FileText,
+  storyboard: Clapperboard,
+  audio:      Headphones,
+  images:     Image,
+  video:      Video,
+  music:      Music,
+  assembly:   GitMerge,
+};
+
+function colorClass(phase: string, variant: "text" | "bg" | "border") {
+  const c = PHASE_COLORS[phase] || "purple";
+  const map: Record<string, Record<string, string>> = {
+    purple: { text: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/30" },
+    sky:    { text: "text-sky-400",    bg: "bg-sky-500/10",    border: "border-sky-500/30" },
+    emerald:{ text: "text-emerald-400",bg: "bg-emerald-500/10",border: "border-emerald-500/30" },
+    orange: { text: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/30" },
+    red:    { text: "text-red-400",    bg: "bg-red-500/10",    border: "border-red-500/30" },
+    pink:   { text: "text-pink-400",   bg: "bg-pink-500/10",   border: "border-pink-500/30" },
+    amber:  { text: "text-amber-400",  bg: "bg-amber-500/10",  border: "border-amber-500/30" },
+  };
+  return map[c]?.[variant] ?? map.purple[variant];
+}
+
+function parseSections(text: string) {
+  const lines = text.split("\n");
+  const sections: { heading: string; content: string[] }[] = [];
+  let current: { heading: string; content: string[] } | null = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const isHeading =
+      /^═+.*═+$/.test(trimmed) ||
+      /^#{1,3}\s/.test(trimmed) ||
+      /^\*{2}[^*]+\*{2}$/.test(trimmed) ||
+      /^[٠-٩0-9]+\.\s+[^\n]{3,}$/.test(trimmed) ||
+      /^[─━═]{3,}/.test(trimmed);
+
+    if (isHeading && trimmed.length > 2) {
+      if (current) sections.push(current);
+      current = { heading: trimmed.replace(/^[═#*─━]+\s*/, "").replace(/\s*[═#*─━]+$/, "").trim(), content: [] };
+    } else if (trimmed) {
+      if (!current) current = { heading: "", content: [] };
+      current.content.push(trimmed);
+    }
+  }
+  if (current) sections.push(current);
+  return sections.filter(s => s.heading || s.content.length > 0);
+}
+
+function RichContent({ text, phase }: { text: string; phase: string }) {
+  const sections = parseSections(text);
+  const tc = colorClass(phase, "text");
+  const bc = colorClass(phase, "bg");
+  const bdc = colorClass(phase, "border");
+
+  if (sections.length === 0) {
+    return (
+      <div className="p-4 text-sm leading-loose whitespace-pre-wrap text-foreground/80 text-right" dir="rtl">
+        {text}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4" dir="rtl">
+      {sections.map((sec, i) => (
+        <div key={i} className={`rounded-lg border ${bdc} overflow-hidden`}>
+          {sec.heading && (
+            <div className={`px-4 py-2 ${bc} border-b ${bdc} flex items-center gap-2`}>
+              <Sparkles size={11} className={tc} />
+              <span className={`text-xs font-bold font-mono uppercase tracking-wide ${tc}`}>{sec.heading}</span>
+            </div>
+          )}
+          <div className="p-4 space-y-1.5">
+            {sec.content.map((line, j) => {
+              const isBullet = /^[-•·*]\s/.test(line);
+              const isNum    = /^[٠-٩0-9]+[.)]\s/.test(line);
+              const isScene  = /^(مشهد|scene|int\.|ext\.)/i.test(line);
+              const isDialog = /^[\u0600-\u06FF\w]+:/i.test(line) && line.includes(":");
+
+              if (isScene) {
+                return (
+                  <div key={j} className={`flex items-start gap-2 p-2 rounded ${bc}`}>
+                    <Camera size={11} className={`${tc} shrink-0 mt-0.5`} />
+                    <span className={`text-xs font-bold ${tc}`}>{line}</span>
+                  </div>
+                );
+              }
+              if (isDialog) {
+                const [speaker, ...rest] = line.split(":");
+                return (
+                  <div key={j} className="flex items-start gap-2 pr-2 border-r-2 border-border/30">
+                    <div className="flex-1">
+                      <span className="text-xs font-bold text-foreground/90">{speaker}:</span>
+                      <span className="text-xs text-muted-foreground mr-1">{rest.join(":")}</span>
+                    </div>
+                  </div>
+                );
+              }
+              if (isBullet || isNum) {
+                return (
+                  <div key={j} className="flex items-start gap-2 text-sm text-right">
+                    <div className={`w-1 h-1 rounded-full ${tc.replace("text-", "bg-")} mt-2 shrink-0`} />
+                    <span className="text-foreground/85 leading-relaxed flex-1">{line.replace(/^[-•·*٠-٩0-9.)\s]+/, "")}</span>
+                  </div>
+                );
+              }
+              return (
+                <p key={j} className="text-sm text-foreground/85 leading-relaxed text-right">{line}</p>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PhasePreviewBadges({ phase }: { phase: string }) {
+  const badges: Record<string, { label: string; icon: any }[]> = {
+    script:     [{ label: "السيناريو", icon: BookOpen }, { label: "الحوار", icon: AlignLeft }, { label: "التوجيهات", icon: Camera }],
+    storyboard: [{ label: "اللوحة المصورة", icon: Layers }, { label: "برومبت FLUX", icon: Wand2 }, { label: "زوايا الكاميرا", icon: Camera }],
+    audio:      [{ label: "الصوت", icon: Volume2 }, { label: "TTS", icon: Mic }, { label: "المؤثرات", icon: Headphones }],
+    images:     [{ label: "FLUX Prompts", icon: Image }, { label: "المشاهد", icon: Layers }],
+    video:      [{ label: "Wan Video", icon: Video }, { label: "المونتاج", icon: Film }],
+    music:      [{ label: "MusicGen", icon: Music }, { label: "الهوية الموسيقية", icon: Sparkles }],
+    assembly:   [{ label: "الجدول الزمني", icon: LayoutList }, { label: "التجميع", icon: GitMerge }, { label: "ما بعد الإنتاج", icon: Cog }],
+  };
+  const items = badges[phase] || [];
+  const tc = colorClass(phase, "text");
+  const bc = colorClass(phase, "bg");
+  const bdc = colorClass(phase, "border");
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items.map(b => (
+        <span key={b.label} className={`flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full ${bc} ${bdc} border ${tc}`}>
+          <b.icon size={9} />{b.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ── Job Result Modal ──────────────────────────────────────────────────────────
+
 function JobResultPanel({ jobId, onClose }: { jobId: string; onClose: () => void }) {
   const { data: job, isLoading, isFetching, refetch } = useGetGenerationJob(jobId);
   const [copied, setCopied] = useState(false);
+  const [rawView, setRawView] = useState(false);
 
   useEffect(() => {
-    if (job?.status === "running") return;
-    refetch();
-  }, [jobId]);
+    if (job?.status !== "running") return;
+    const t = setInterval(() => refetch(), 3500);
+    return () => clearInterval(t);
+  }, [job?.status, refetch]);
+
+  useEffect(() => { refetch(); }, [jobId]);
 
   const handleCopy = () => {
     const text = job?.result || "";
-    if (text) {
-      navigator.clipboard?.writeText(text).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      });
-    }
+    if (text) navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   };
 
+  const phase = job?.phase || "script";
+  const PhaseIcon = PHASE_ICONS_MAP[phase] || FileText;
+  const tc = colorClass(phase, "text");
+  const bc = colorClass(phase, "bg");
+  const bdc = colorClass(phase, "border");
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" dir="rtl" onClick={onClose}>
-      <div
-        className="bg-card border border-purple-500/40 rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl shadow-black/50"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border/50 shrink-0">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" dir="rtl" onClick={onClose}>
+      <div className={`bg-card border ${bdc} rounded-xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl shadow-black/60`}
+        onClick={e => e.stopPropagation()}>
+
+        {/* ── Header ── */}
+        <div className={`flex items-center justify-between p-4 border-b border-border/40 shrink-0 ${bc}`}>
           <div className="flex items-center gap-2">
-            <button onClick={onClose} className="p-1.5 hover:bg-secondary rounded transition-colors">
+            <button onClick={onClose} className="p-1.5 hover:bg-secondary rounded-lg transition-colors">
               <X size={15} />
             </button>
             {job?.result && (
-              <button onClick={handleCopy}
-                className="flex items-center gap-1.5 text-xs font-mono text-muted-foreground hover:text-purple-400 px-2.5 py-1 rounded border border-border/30 hover:border-purple-500/30 transition-colors">
-                {copied ? <><Check size={12} className="text-emerald-400" /> نُسخ</> : <><Copy size={12} /> نسخ النتيجة</>}
-              </button>
+              <>
+                <button onClick={handleCopy}
+                  className={`flex items-center gap-1.5 text-xs font-mono px-2.5 py-1 rounded-lg border ${bdc} ${bc} ${tc} hover:opacity-80 transition-opacity`}>
+                  {copied ? <><Check size={11} className="text-emerald-400" /> نُسخ</> : <><Copy size={11} /> نسخ</>}
+                </button>
+                <button onClick={() => setRawView(v => !v)}
+                  className="text-xs font-mono px-2.5 py-1 rounded-lg border border-border/40 text-muted-foreground hover:text-foreground transition-colors">
+                  {rawView ? "معاينة غنية" : "نص خام"}
+                </button>
+              </>
             )}
-            {isFetching && <RefreshCw size={12} className="text-purple-400 animate-spin" />}
+            {isFetching && <RefreshCw size={12} className={`${tc} animate-spin`} />}
           </div>
-          <div className="text-right">
-            <h3 className="font-bold text-sm">نتيجة التوليد الذكي</h3>
-            {job && (
-              <p className="text-xs text-muted-foreground font-mono mt-0.5">
-                {PHASE_AR[job.phase] || job.phase}
-                {job.model_used && <span className="text-purple-400/70"> · {job.model_used}</span>}
-                <span className={
-                  job.status === "completed" ? " text-emerald-400" :
-                  job.status === "failed" ? " text-red-400" : " text-amber-400"
-                }>
-                  {job.status === "completed" ? " · مكتمل ✓" : job.status === "failed" ? " · فشل ✗" : " · جارٍ…"}
-                </span>
-              </p>
-            )}
+          <div className="flex items-center gap-3">
+            <div className="text-right">
+              <h3 className="font-bold text-sm flex items-center gap-2 justify-end">
+                {job && <span className={`text-[10px] font-mono ${job.status === "completed" ? "text-emerald-400" : job.status === "failed" ? "text-red-400" : "text-amber-400 animate-pulse"}`}>
+                  {job.status === "completed" ? "مكتمل ✓" : job.status === "failed" ? "فشل ✗" : "جارٍ التوليد…"}
+                </span>}
+                نتيجة التوليد الذكي
+              </h3>
+              {job && (
+                <div className="flex items-center gap-2 mt-1 justify-end">
+                  <PhasePreviewBadges phase={phase} />
+                  {job.model_used && <span className="text-[10px] font-mono text-muted-foreground/60">{job.model_used}</span>}
+                </div>
+              )}
+            </div>
+            <div className={`w-10 h-10 rounded-xl ${bc} border ${bdc} flex items-center justify-center shrink-0`}>
+              <PhaseIcon size={20} className={tc} />
+            </div>
           </div>
         </div>
 
-        {/* Content */}
+        {/* ── Content ── */}
         <div className="flex-1 overflow-y-auto p-5 min-h-0">
           {isLoading ? (
-            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-              <RefreshCw size={28} className="animate-spin mb-3 text-purple-400" />
-              <p className="text-sm">جارٍ تحميل النتيجة…</p>
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <RefreshCw size={28} className={`animate-spin ${tc}`} />
+              <p className="text-sm text-muted-foreground">جارٍ تحميل النتيجة…</p>
             </div>
           ) : job?.status === "running" ? (
-            <div className="flex flex-col items-center justify-center py-16 text-amber-400">
-              <RefreshCw size={28} className="animate-spin mb-3" />
-              <p className="text-sm font-mono">الذكاء الاصطناعي يعمل…</p>
-              <p className="text-xs text-muted-foreground mt-2">يتم التحديث تلقائياً كل 3 ثوانٍ</p>
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className={`w-16 h-16 rounded-2xl ${bc} border ${bdc} flex items-center justify-center`}>
+                <PhaseIcon size={28} className={`${tc} animate-pulse`} />
+              </div>
+              <p className={`text-sm font-bold ${tc}`}>الذكاء الاصطناعي يولّد المحتوى…</p>
+              <p className="text-xs text-muted-foreground">يتم التحديث تلقائياً كل 3.5 ثوانٍ</p>
               {job.estimated_seconds && (
-                <p className="text-xs text-muted-foreground mt-1">الوقت المتوقع: ~{job.estimated_seconds}ث</p>
+                <div className={`flex items-center gap-2 text-xs font-mono ${bc} border ${bdc} px-3 py-1.5 rounded-full`}>
+                  <Clock size={11} className={tc} />
+                  <span className={tc}>الوقت المتوقع: ~{job.estimated_seconds}ث</span>
+                </div>
               )}
+              <div className="w-48 h-1.5 bg-secondary rounded-full overflow-hidden mt-2">
+                <div className={`h-full rounded-full ${tc.replace("text-", "bg-")} animate-pulse`} style={{ width: "60%" }} />
+              </div>
             </div>
           ) : job?.result ? (
-            <div className="text-sm leading-loose whitespace-pre-wrap text-foreground/90 font-mono text-right" dir="rtl" lang="ar">
-              {job.result}
-            </div>
+            rawView ? (
+              <pre className="text-xs leading-loose whitespace-pre-wrap text-foreground/75 font-mono text-right" dir="rtl" lang="ar">
+                {job.result}
+              </pre>
+            ) : (
+              <RichContent text={job.result} phase={phase} />
+            )
           ) : (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center mb-3">
-                <FileText size={20} className="text-muted-foreground" />
+            <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-secondary border border-border/30 flex items-center justify-center">
+                <FileText size={24} className="text-muted-foreground/40" />
               </div>
-              <p className="text-sm text-muted-foreground">لا يوجد محتوى محفوظ لهذه المهمة</p>
-              <p className="text-xs text-muted-foreground/60 mt-1">أعد تشغيل هذه المرحلة لتوليد المحتوى</p>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">لا يوجد محتوى محفوظ لهذه المرحلة</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">أعد تشغيل هذه المرحلة لتوليد المحتوى بالذكاء الاصطناعي</p>
+              </div>
             </div>
           )}
         </div>
+
+        {/* ── Footer stats ── */}
+        {job?.result && (
+          <div className={`flex items-center justify-between px-5 py-2.5 border-t border-border/30 ${bc} text-[10px] font-mono shrink-0`}>
+            <span className={tc}>{job.result.length.toLocaleString()} حرف</span>
+            <span className="text-muted-foreground/60">{job.completed_at ? `اكتمل: ${new Date(job.completed_at).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
+            <span className="text-muted-foreground/60">{PHASE_AR[phase] || phase} · {job.model_used}</span>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function InlineJobResult({ jobId }: { jobId: string }) {
-  const { data: job, isLoading, isFetching } = useGetGenerationJob(jobId);
+// ── Inline Preview (in job list) ─────────────────────────────────────────────
+
+function InlineJobResult({ jobId, phase }: { jobId: string; phase?: string }) {
+  const { data: job, isLoading } = useGetGenerationJob(jobId);
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    if (job?.result) {
-      navigator.clipboard?.writeText(job.result).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      });
-    }
+    if (job?.result) navigator.clipboard?.writeText(job.result).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   };
 
-  if (isLoading) {
-    return (
-      <div className="mt-2 p-3 bg-secondary/50 rounded border border-border/30">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <RefreshCw size={11} className="animate-spin" />
-          <span className="font-mono">جارٍ التحميل…</span>
-        </div>
-      </div>
-    );
-  }
+  const p = phase || job?.phase || "script";
+  const tc = colorClass(p, "text");
+  const bc = colorClass(p, "bg");
+  const bdc = colorClass(p, "border");
 
-  if (job?.status === "running") {
-    return (
-      <div className="mt-2 p-3 bg-amber-400/5 rounded border border-amber-400/20">
-        <div className="flex items-center gap-2 text-xs text-amber-400">
-          <RefreshCw size={11} className="animate-spin" />
-          <span className="font-mono">الذكاء الاصطناعي يعمل… يتحدث كل 3ث</span>
-        </div>
-      </div>
-    );
-  }
+  if (isLoading) return (
+    <div className="mt-2 p-3 bg-secondary/40 rounded-lg border border-border/30 flex items-center gap-2">
+      <RefreshCw size={11} className="animate-spin text-muted-foreground" />
+      <span className="text-xs font-mono text-muted-foreground">جارٍ التحميل…</span>
+    </div>
+  );
 
-  if (!job?.result) {
-    return (
-      <div className="mt-2 p-3 bg-secondary/50 rounded border border-border/30">
-        <p className="text-xs text-muted-foreground font-mono text-right">لا يوجد محتوى — أعد تشغيل المرحلة</p>
-      </div>
-    );
-  }
+  if (job?.status === "running") return (
+    <div className={`mt-2 p-3 ${bc} rounded-lg border ${bdc} flex items-center gap-2`}>
+      <RefreshCw size={11} className={`animate-spin ${tc}`} />
+      <span className={`text-xs font-mono ${tc}`}>الذكاء الاصطناعي يعمل… يتحدث تلقائياً</span>
+    </div>
+  );
 
-  const preview = job.result.slice(0, 400);
-  const isTruncated = job.result.length > 400;
+  if (!job?.result) return (
+    <div className="mt-2 p-3 bg-secondary/30 rounded-lg border border-border/20">
+      <p className="text-xs text-muted-foreground/60 font-mono text-right">لا يوجد محتوى — شغّل المرحلة لتوليد المحتوى</p>
+    </div>
+  );
+
+  const sections = parseSections(job.result);
+  const firstSection = sections[0];
+  const previewLines = firstSection?.content?.slice(0, 3) || [];
 
   return (
-    <div className="mt-2 bg-secondary/30 rounded border border-border/30 overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/20">
-        <button onClick={handleCopy}
-          className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground hover:text-purple-400 transition-colors">
-          {copied ? <><Check size={10} className="text-emerald-400" /> نُسخ</> : <><Copy size={10} /> نسخ</>}
-        </button>
-        <span className="text-[10px] font-mono text-muted-foreground/50">{job.result.length} حرف</span>
+    <div className={`mt-2 rounded-lg border ${bdc} overflow-hidden`}>
+      <div className={`flex items-center justify-between px-3 py-1.5 ${bc} border-b ${bdc}`}>
+        <div className="flex items-center gap-2">
+          <button onClick={handleCopy}
+            className={`flex items-center gap-1 text-[10px] font-mono ${tc} hover:opacity-70 transition-opacity`}>
+            {copied ? <><Check size={9} className="text-emerald-400" />نُسخ</> : <><Copy size={9} />نسخ</>}
+          </button>
+          <span className="text-[10px] font-mono text-muted-foreground/50">{(job.result.length / 1000).toFixed(1)}k حرف</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {firstSection?.heading && (
+            <span className={`text-[10px] font-mono ${tc}`}>{firstSection.heading.substring(0, 30)}</span>
+          )}
+          <span className={`text-[10px] font-mono ${tc}`}>{sections.length} أقسام</span>
+        </div>
       </div>
-      <div className="p-3 text-xs leading-loose whitespace-pre-wrap text-foreground/80 font-mono text-right max-h-56 overflow-y-auto" dir="rtl" lang="ar">
-        {preview}{isTruncated && <span className="text-purple-400/60">…</span>}
+      <div className="p-3 space-y-1">
+        {previewLines.map((line, i) => (
+          <p key={i} className="text-xs text-foreground/75 leading-relaxed text-right line-clamp-1" dir="rtl">{line}</p>
+        ))}
+        {sections.length > 1 && (
+          <p className={`text-[10px] font-mono ${tc}/60 text-right mt-1`}>+ {sections.length - 1} أقسام أخرى — انقر لعرض الكل</p>
+        )}
       </div>
     </div>
   );
@@ -500,7 +704,7 @@ export default function ProductionPage() {
                           {/* Inline result */}
                           {isExpanded && (
                             <div className="border-t border-border/30 px-2.5 pb-2.5">
-                              <InlineJobResult jobId={job.id} />
+                              <InlineJobResult jobId={job.id} phase={job.phase} />
                             </div>
                           )}
                         </div>
