@@ -3,6 +3,8 @@ import { db } from "@workspace/db";
 import { agentsTable, systemAlertsTable, complaintsTable, activityTable, agentPatchesTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs";
+import { resolve, join, dirname } from "path";
 import { callAIForTask, callGeminiTTS, callGeminiImageGen, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
 import { saveTtsAudio, saveImageFile, extractTtsScript } from "../lib/media.js";
 import { broadcast } from "../lib/ws.js";
@@ -683,6 +685,244 @@ router.get("/patches", async (req, res) => {
     created_at: p.created_at?.toISOString() || new Date().toISOString(),
     rolled_back_at: p.rolled_back_at?.toISOString() || null,
   })));
+});
+
+// ══════════════════════════════════════════════════════════════
+//  وكيل الكود — Billie Code Agent (file ops + AI programming)
+// ══════════════════════════════════════════════════════════════
+
+const WS_ROOT = resolve("/home/runner/workspace");
+
+// مسارات مسموح بقراءتها
+const READ_ALLOWED = ["artifacts/acis-desktop/src", "artifacts/api-server/src", "lib/db/src", "lib/api-spec"];
+// مسارات مسموح بكتابتها فقط
+const WRITE_ALLOWED = ["artifacts/acis-desktop/src", "artifacts/api-server/src", "lib/db/src"];
+// أنماط محظورة دائماً
+const BLOCKED_RE = [/node_modules/, /[/\\]dist[/\\]/, /[/\\]\.git[/\\]/, /[/\\]data[/\\]/, /[/\\]\.local[/\\]/];
+
+function isSafe(rel: string, forWrite = false): string | null {
+  if (!rel || rel.includes("..") || rel.startsWith("/")) return null;
+  const abs = resolve(WS_ROOT, rel);
+  if (!abs.startsWith(WS_ROOT + "/")) return null;
+  if (BLOCKED_RE.some(r => r.test(abs))) return null;
+  const allowed = forWrite ? WRITE_ALLOWED : READ_ALLOWED;
+  if (!allowed.some(p => abs.startsWith(resolve(WS_ROOT, p)))) return null;
+  return abs;
+}
+
+function safeListDir(rel: string, depth = 0): any[] {
+  if (depth > 4) return [];
+  const abs = isSafe(rel);
+  if (!abs || !existsSync(abs)) return [];
+  try {
+    return readdirSync(abs)
+      .filter(n => !BLOCKED_RE.some(r => r.test(n)) && !n.startsWith("."))
+      .map(name => {
+        const cr = `${rel}/${name}`;
+        const ca = join(abs, name);
+        const isDir = statSync(ca).isDirectory();
+        return { name, path: cr, isDir, children: isDir && depth < 2 ? safeListDir(cr, depth + 1) : [] };
+      });
+  } catch { return []; }
+}
+
+function safeReadFile(rel: string): { content: string; lines: number } | null {
+  const abs = isSafe(rel);
+  if (!abs || !existsSync(abs)) return null;
+  try {
+    const st = statSync(abs);
+    if (st.size > 200_000) return { content: "[ملف كبير جداً للقراءة الكاملة]", lines: 0 };
+    const raw = readFileSync(abs, "utf-8");
+    const ls = raw.split("\n");
+    const content = ls.length > 700 ? ls.slice(0, 700).join("\n") + "\n// ... [مقطوع عند 700 سطر]" : raw;
+    return { content, lines: ls.length };
+  } catch { return null; }
+}
+
+function safeWriteFile(rel: string, content: string): { ok: boolean; error?: string } {
+  const abs = isSafe(rel, true);
+  if (!abs) return { ok: false, error: "المسار غير مسموح به للكتابة" };
+  try {
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, content, "utf-8");
+    return { ok: true };
+  } catch (e: any) { return { ok: false, error: e.message }; }
+}
+
+// نظام برومبت وكيل الكود
+const CODE_AGENT_SYSTEM = `أنت بيليه — وكيلة الذكاء الاصطناعي الخبيرة في برمجة منصة ACIS.
+
+هيكل المشروع (pnpm monorepo في /home/runner/workspace):
+- artifacts/acis-desktop/src/ — الواجهة الأمامية (React + Vite + TypeScript + Tailwind CSS + shadcn/ui)
+  - pages/ — صفحات: billie.tsx, dashboard.tsx, acis.tsx, production.tsx, caeos.tsx, nexus.tsx, conversations.tsx, settings.tsx, archive.tsx
+  - components/layout.tsx — التنقل (NAV_SECTIONS)، App.tsx — المسارات (wouter Router)
+  - components/ui/ — shadcn مكونات (Button, Badge, Input, Textarea, Skeleton, Dialog…)
+- artifacts/api-server/src/ — الخادم الخلفي (Express + TypeScript)
+  - routes/ — routes/*.ts، routes/index.ts — تسجيل المسارات
+  - lib/ai.ts — callAIForTask(tier, system, prompt), callGeminiTTS, callGeminiImageGen, AGENT_SYSTEM_PROMPTS
+  - lib/seed.ts — بيانات الوكلاء الأولية (seedAgents)
+- lib/db/src/schema/index.ts — Drizzle ORM SQLite جداول: agents، agentPatchesTable، activityTable…
+
+جدول الوكلاء الأعمدة: id(text PK), name, nameAr, system(text=معرف البرومبت), description, descriptionAr,
+status(online/offline/busy), model(gemini-2.5-pro/gemini-2.0-flash/qwen-max),
+capabilities(json[]), subagents(json[]), icon(text), color(text), prompt(text|null)
+
+لإنشاء وكيل جديد:
+1. أضف AGENT_SYSTEM_PROMPTS["agent-id"] في lib/ai.ts
+2. أضف السجل في دالة seedAgents في lib/seed.ts
+
+لإضافة صفحة: أنشئ src/pages/page.tsx، أضف Route في App.tsx، أضف للـ NAV_SECTIONS في layout.tsx
+لإضافة مسار API: أنشئ routes/new.ts، سجّله في routes/index.ts
+
+أسلوب الكود: TypeScript صارم، Tailwind dark theme (bg-card border-border text-foreground primary)،
+Arabic RTL (dir="rtl" text-right)، shadcn/ui مكونات، drizzle-orm للـ DB`;
+
+const CODE_PLAN_PROMPT = (task: string) => `المهمة: ${task}
+
+أعد JSON فقط بهذا الشكل الصارم (بدون markdown):
+{
+  "plan": "وصف مختصر لما ستفعله (جملة واحدة)",
+  "files_to_read": ["مسار/نسبي/من/workspace", "..."],
+  "scope": "agent|page|route|style|fix|other"
+}
+
+القواعد:
+- files_to_read: مسارات نسبية من /home/runner/workspace، بحد أقصى 6 ملفات
+- اقرأ الملفات الأكثر صلة بالمهمة
+- للوكلاء: اقرأ lib/seed.ts و src/lib/ai.ts
+- للصفحات: اقرأ App.tsx و components/layout.tsx وصفحة مشابهة
+- للمسارات: اقرأ routes/index.ts وملف route مشابه`;
+
+const CODE_GENERATE_PROMPT = (task: string, fileContents: Record<string, string>) => {
+  const filesStr = Object.entries(fileContents)
+    .map(([p, c]) => `\n=== ${p} ===\n${c}`)
+    .join("\n");
+  return `المهمة: ${task}
+
+الملفات الحالية:${filesStr}
+
+أعد JSON فقط (بدون markdown) بهذا الشكل الصارم:
+{
+  "summary": "ملخص ما تم (2-3 جمل)",
+  "operations": [
+    {
+      "type": "write",
+      "path": "artifacts/acis-desktop/src/pages/example.tsx",
+      "content": "الكود الكامل للملف هنا",
+      "is_new": false,
+      "reason": "سبب التعديل"
+    }
+  ]
+}
+
+القواعد الصارمة:
+- content: الملف الكامل، لا تقطعه
+- المسارات نسبية من workspace
+- للملفات الكبيرة: عدّل فقط ما يلزم ولكن اكتب الملف الكامل
+- لإنشاء وكيل: عدّل lib/seed.ts وأضف AGENT_SYSTEM_PROMPTS في lib/ai.ts
+- لا تعدّل dist/ أو node_modules/ أو data/`;
+};
+
+// GET /api/billie/workspace/ls — قائمة الملفات
+router.get("/workspace/ls", (req, res) => {
+  const rel = String(req.query.path || "artifacts/acis-desktop/src");
+  const tree = safeListDir(rel);
+  if (!tree) return res.status(403).json({ error: "مسار غير مسموح" });
+  res.json({ path: rel, tree });
+});
+
+// POST /api/billie/workspace/read — قراءة ملف
+router.post("/workspace/read", (req, res) => {
+  const { path: rel } = req.body as { path: string };
+  if (!rel) return res.status(400).json({ error: "path مطلوب" });
+  const result = safeReadFile(rel);
+  if (!result) return res.status(404).json({ error: "الملف غير موجود أو غير مسموح بقراءته" });
+  res.json({ path: rel, ...result });
+});
+
+// POST /api/billie/workspace/write — كتابة/تعديل ملف
+router.post("/workspace/write", async (req, res) => {
+  const { path: rel, content } = req.body as { path: string; content: string };
+  if (!rel || content === undefined) return res.status(400).json({ error: "path و content مطلوبان" });
+  const result = safeWriteFile(rel, content);
+  if (!result.ok) return res.status(403).json({ error: result.error });
+  await db.insert(activityTable).values({ id: randomUUID(), type: "agent_completed", title: "بيليه عدّلت ملفاً", description: rel });
+  res.json({ path: rel, lines: content.split("\n").length, written_at: new Date().toISOString() });
+});
+
+// POST /api/billie/code-agent/stream — وكيل الكود الرئيسي (SSE)
+router.post("/code-agent/stream", async (req, res) => {
+  const { task } = req.body as { task: string };
+  if (!task?.trim()) return res.status(400).json({ error: "task مطلوب" });
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+
+  const emit = (ev: object) => res.write(`data: ${JSON.stringify(ev)}\n\n`);
+
+  try {
+    // ── مرحلة 1: تخطيط ──
+    emit({ type: "status", message: "أُحلّل المهمة وأحدد الملفات المطلوبة…" });
+    const planRaw = await callAIForTask("text_fast", CODE_AGENT_SYSTEM, CODE_PLAN_PROMPT(task.trim()));
+    let plan: { plan: string; files_to_read: string[]; scope: string };
+    try {
+      const cleaned = planRaw.text.replace(/```json\n?|```\n?/g, "").trim();
+      plan = JSON.parse(cleaned);
+    } catch {
+      plan = { plan: "تنفيذ المهمة المطلوبة", files_to_read: [], scope: "other" };
+    }
+    emit({ type: "plan", plan: plan.plan, files_to_read: plan.files_to_read, scope: plan.scope });
+
+    // ── مرحلة 2: قراءة الملفات ──
+    const fileContents: Record<string, string> = {};
+    for (const filePath of (plan.files_to_read || []).slice(0, 6)) {
+      emit({ type: "reading", path: filePath });
+      const result = safeReadFile(filePath);
+      if (result) {
+        fileContents[filePath] = result.content;
+        emit({ type: "file_read", path: filePath, lines: result.lines, preview: result.content.slice(0, 300) });
+      } else {
+        emit({ type: "file_read", path: filePath, lines: 0, error: "لم يُعثر على الملف أو غير مسموح" });
+      }
+    }
+
+    // ── مرحلة 3: توليد الكود ──
+    emit({ type: "status", message: "أُولّد الكود والتعديلات…" });
+    const codeRaw = await callAIForTask("text_complex", CODE_AGENT_SYSTEM, CODE_GENERATE_PROMPT(task.trim(), fileContents));
+    let ops: { summary: string; operations: Array<{ type: string; path: string; content: string; is_new: boolean; reason: string }> };
+    try {
+      const cleaned = codeRaw.text.replace(/```json\n?|```\n?/g, "").trim();
+      ops = JSON.parse(cleaned);
+    } catch {
+      emit({ type: "error", message: "فشل تحليل رد الذكاء الاصطناعي — يرجى المحاولة بتفصيل أكثر" });
+      res.end(); return;
+    }
+
+    // ── مرحلة 4: تطبيق التعديلات ──
+    const modifiedFiles: string[] = [];
+    const errors: string[] = [];
+    for (const op of (ops.operations || []).slice(0, 10)) {
+      if (op.type !== "write" || !op.path || !op.content) continue;
+      emit({ type: "writing", path: op.path, is_new: op.is_new || false, reason: op.reason });
+      const result = safeWriteFile(op.path, op.content);
+      if (result.ok) {
+        modifiedFiles.push(op.path);
+        emit({ type: "file_written", path: op.path, lines: op.content.split("\n").length, is_new: op.is_new || false, content_preview: op.content.slice(0, 500) });
+        await db.insert(activityTable).values({ id: randomUUID(), type: "agent_completed", title: op.is_new ? "بيليه أنشأت ملفاً جديداً" : "بيليه عدّلت ملفاً", description: op.path });
+      } else {
+        errors.push(`${op.path}: ${result.error}`);
+        emit({ type: "write_error", path: op.path, error: result.error });
+      }
+    }
+
+    emit({ type: "done", summary: ops.summary, modified_files: modifiedFiles, errors });
+  } catch (err: any) {
+    console.error("[CodeAgent] خطأ:", err?.message);
+    emit({ type: "error", message: err?.message || "خطأ غير معروف" });
+  }
+  res.end();
 });
 
 // ══════════════════════════════════════════════════════════════

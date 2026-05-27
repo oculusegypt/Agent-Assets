@@ -22,6 +22,8 @@ import {
   ChevronRight, AlertCircle, Info, ArrowRight, GitCompare,
   Volume2, ImageIcon, Loader2, ThumbsUp, ThumbsDown, Copy,
   Music2, Sparkles, Mic,
+  Code2, FolderOpen, FileCode2, FilePlus2, CheckCheck,
+  Terminal, GitBranch, Play, ChevronLeft, Eye as EyeIcon,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -45,6 +47,24 @@ const NEWS_CAT_AR: Record<string, string> = {
   image: "صور", audio: "صوت", ai: "ذكاء اصطناعي",
 };
 
+type CodeStep = {
+  type: "status" | "plan" | "reading" | "file_read" | "writing" | "file_written" | "write_error" | "done" | "error";
+  message?: string;
+  path?: string;
+  lines?: number;
+  is_new?: boolean;
+  reason?: string;
+  error?: string;
+  preview?: string;
+  plan?: string;
+  files_to_read?: string[];
+  scope?: string;
+  summary?: string;
+  modified_files?: string[];
+  errors?: string[];
+  content_preview?: string;
+};
+
 type ChatMsg = {
   role: "user" | "billie";
   text: string;
@@ -55,7 +75,33 @@ type ChatMsg = {
   mediaUrl?: string;
   mediaLoading?: boolean;
   suggestions?: string[];
+  codeTask?: boolean;
+  codeSteps?: CodeStep[];
+  codeDone?: boolean;
 };
+
+function detectCodeIntent(text: string): boolean {
+  return /(?:أنشئ|اصنع|أضف|اعمل|ابن|برمج|عدّل|عدل|غيّر|غير|اكتب|طوّر|طور|حسّن|حسن|أنشأ|أنشا)\s*(?:وكيل|صفحة|page|مسار|route|endpoint|api|دالة|function|مكون|component|agent|وكلاء|ملف|كود)/i.test(text) ||
+    /(?:create|add|build|make|edit|update|generate|write|fix|implement)\s+(?:agent|page|route|api|function|component|file|class|hook)/i.test(text) ||
+    /(?:اصلح|صحّح|صحح|حل)\s*(?:خطأ|بيج|bug|مشكلة|error)\s*(?:في\s*الكود|برمجي|في\s*الملف)/i.test(text) ||
+    /(?:وكيل\s*(?:جديد|مساعد|فرعي)|subagent|sub-agent)/i.test(text) ||
+    /افتح\s*(?:ملف|صفحة|كود)/i.test(text);
+}
+
+function getFileIcon(path: string) {
+  if (path.endsWith(".tsx") || path.endsWith(".jsx")) return <FileCode2 size={10} className="text-sky-400" />;
+  if (path.endsWith(".ts") || path.endsWith(".js")) return <FileCode2 size={10} className="text-amber-400" />;
+  if (path.endsWith(".css")) return <FileCode2 size={10} className="text-pink-400" />;
+  if (path.endsWith(".json")) return <FileCode2 size={10} className="text-emerald-400" />;
+  return <FileText size={10} className="text-muted-foreground" />;
+}
+
+function getLangClass(path: string) {
+  if (path.endsWith(".tsx") || path.endsWith(".jsx") || path.endsWith(".ts") || path.endsWith(".js")) return "text-sky-100";
+  if (path.endsWith(".css")) return "text-pink-100";
+  if (path.endsWith(".json")) return "text-emerald-100";
+  return "text-foreground";
+}
 
 function detectImageIntent(text: string): boolean {
   return /(?:ولّد|ولد|اصنع|أنشئ|ارسم|أريد|اعطيني|صمّم|أنتج|عمل)\s*(?:لي\s*)?(?:صورة|صور|لوحة|رسمة|مشهد|صورة\s*لـ)/i.test(text) ||
@@ -127,6 +173,138 @@ function formatBillieText(text: string) {
     i++;
   }
   return <div className="space-y-0">{elements}</div>;
+}
+
+// ── CodeAgentPanel component ──
+function CodeAgentPanel({ steps, loading, done }: { steps: CodeStep[]; loading: boolean; done: boolean }) {
+  const [expanded, setExpanded] = useState(true);
+  const [activeFile, setActiveFile] = useState<{ path: string; content: string; is_new?: boolean } | null>(null);
+
+  const planStep   = steps.find(s => s.type === "plan");
+  const doneStep   = steps.find(s => s.type === "done");
+  const errorStep  = steps.find(s => s.type === "error");
+  const readFiles  = steps.filter(s => s.type === "file_read");
+  const writtenFiles = steps.filter(s => s.type === "file_written");
+  const statusMsg  = [...steps].reverse().find(s => s.type === "status" || s.type === "reading" || s.type === "writing");
+
+  const currentStatus = loading
+    ? (statusMsg?.message || (statusMsg?.type === "reading" ? `قراءة ${statusMsg.path}` : statusMsg?.type === "writing" ? `كتابة ${statusMsg.path}` : "جارٍ التنفيذ…"))
+    : done ? "✅ اكتملت العملية" : errorStep ? `❌ ${errorStep.message}` : "";
+
+  return (
+    <div className="w-full rounded-2xl border border-indigo-500/25 bg-[#0d1117] overflow-hidden text-left font-mono shadow-xl shadow-indigo-500/8">
+      {/* Terminal Header */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-indigo-500/20 bg-gradient-to-r from-indigo-950/60 to-transparent">
+        <div className="flex gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
+          <div className="w-2.5 h-2.5 rounded-full bg-amber-500/60" />
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/60" />
+        </div>
+        <div className="flex items-center gap-1.5 flex-1">
+          <Terminal size={10} className="text-indigo-400/60" />
+          <span className="text-[10px] text-indigo-300/60">billie — code-agent</span>
+        </div>
+        {loading && <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />}
+        {done && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
+        {errorStep && <div className="w-1.5 h-1.5 rounded-full bg-red-400" />}
+        <button onClick={() => setExpanded(e => !e)} className="text-[10px] text-indigo-400/50 hover:text-indigo-300 transition-colors px-1">
+          {expanded ? "−" : "+"}
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="p-3 space-y-2">
+          {/* Plan */}
+          {planStep && (
+            <div className="text-[11px]">
+              <span className="text-indigo-400">→ </span>
+              <span className="text-indigo-200/80">{planStep.plan}</span>
+              {planStep.scope && <span className="mr-2 text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300/70">{planStep.scope}</span>}
+            </div>
+          )}
+
+          {/* Status */}
+          {(loading || (!done && !errorStep)) && currentStatus && (
+            <div className="flex items-center gap-2 text-[11px]">
+              <Loader2 size={10} className="animate-spin text-amber-400 shrink-0" />
+              <span className="text-amber-200/70">{currentStatus}</span>
+            </div>
+          )}
+
+          {/* Files Read */}
+          {readFiles.length > 0 && (
+            <div className="space-y-1">
+              <div className="text-[9px] text-indigo-400/50 uppercase tracking-widest">ملفات مقروءة</div>
+              {readFiles.map((s, i) => (
+                <div key={i} className="flex items-center gap-2 text-[10px] group">
+                  <FolderOpen size={9} className="text-amber-400/70 shrink-0" />
+                  <span className="text-amber-200/60 flex-1 truncate">{s.path}</span>
+                  {s.lines != null && <span className="text-[9px] text-indigo-400/40">{s.lines}L</span>}
+                  {s.preview && (
+                    <button onClick={() => setActiveFile({ path: s.path || "", content: s.preview || "" })}
+                      className="opacity-0 group-hover:opacity-100 text-[9px] text-indigo-400/60 hover:text-indigo-300 px-1 py-0.5 rounded transition-all border border-indigo-500/20 flex items-center gap-1">
+                      <EyeIcon size={8} /> عرض
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Files Written */}
+          {writtenFiles.length > 0 && (
+            <div className="space-y-1">
+              <div className="text-[9px] text-emerald-400/50 uppercase tracking-widest">ملفات معدّلة</div>
+              {writtenFiles.map((s, i) => (
+                <div key={i} className="flex items-center gap-2 text-[10px] group">
+                  {s.is_new ? <FilePlus2 size={9} className="text-emerald-400 shrink-0" /> : <FileCode2 size={9} className="text-sky-400 shrink-0" />}
+                  <span className={`flex-1 truncate ${s.is_new ? "text-emerald-300/80" : "text-sky-300/80"}`}>{s.path}</span>
+                  {s.lines != null && <span className="text-[9px] text-indigo-400/40">{s.lines}L</span>}
+                  <CheckCheck size={9} className="text-emerald-400/70" />
+                  {s.content_preview && (
+                    <button onClick={() => setActiveFile({ path: s.path || "", content: s.content_preview || "", is_new: s.is_new })}
+                      className="opacity-0 group-hover:opacity-100 text-[9px] text-indigo-400/60 hover:text-indigo-300 px-1 py-0.5 rounded transition-all border border-indigo-500/20 flex items-center gap-1">
+                      <EyeIcon size={8} /> عرض
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Error */}
+          {errorStep && (
+            <div className="text-[10px] text-red-400/80 bg-red-500/8 border border-red-500/20 rounded-lg px-2.5 py-2">
+              ✗ {errorStep.message}
+            </div>
+          )}
+
+          {/* Done summary */}
+          {doneStep?.summary && (
+            <div className="text-[10px] text-emerald-300/80 bg-emerald-500/8 border border-emerald-500/20 rounded-lg px-2.5 py-2">
+              ✓ {doneStep.summary}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Inline file viewer */}
+      {activeFile && (
+        <div className="border-t border-indigo-500/20">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-950/30">
+            {getFileIcon(activeFile.path)}
+            <span className="text-[10px] text-indigo-300/70 flex-1 truncate">{activeFile.path}</span>
+            {activeFile.is_new && <span className="text-[8px] px-1 py-0.5 rounded bg-emerald-500/20 text-emerald-400">جديد</span>}
+            <button onClick={() => setActiveFile(null)} className="text-[10px] text-indigo-400/50 hover:text-red-400 transition-colors">✕</button>
+          </div>
+          <pre className={`text-[10px] leading-relaxed p-3 overflow-x-auto max-h-52 overflow-y-auto ${getLangClass(activeFile.path)}`}
+            style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace", background: "transparent", tabSize: 2 }}>
+            {activeFile.content}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
 }
 
 const QUICK_ACTIONS = [
@@ -218,14 +396,17 @@ export default function BilliePage() {
 
   const sendChat = useCallback(async (text: string) => {
     if (!text.trim() || chatLoading) return;
-    const wantsImage = detectImageIntent(text);
-    const wantsAudio = detectAudioIntent(text);
+    const wantsCode  = detectCodeIntent(text);
+    const wantsImage = !wantsCode && detectImageIntent(text);
+    const wantsAudio = !wantsCode && detectAudioIntent(text);
 
     const userMsg: ChatMsg = { role: "user", text: text.trim(), ts: new Date().toISOString() };
     const streamingMsg: ChatMsg = {
       role: "billie", text: "", ts: new Date().toISOString(), loading: true,
       mediaType: wantsImage ? "image" : wantsAudio ? "audio" : undefined,
       mediaLoading: wantsImage || wantsAudio,
+      codeTask: wantsCode,
+      codeSteps: wantsCode ? [] : undefined,
     };
     setChatHistory(h => [...h, userMsg, streamingMsg]);
     setChatInput("");
@@ -235,6 +416,72 @@ export default function BilliePage() {
       .filter(m => !m.loading)
       .slice(-8)
       .map(m => ({ role: m.role === "user" ? "user" : "model", text: m.text }));
+
+    // ── وكيل الكود (Code Agent SSE) ──
+    if (wantsCode) {
+      const appendStep = (step: CodeStep) => {
+        setChatHistory(h => {
+          const copy = [...h];
+          const li = copy.length - 1;
+          if (copy[li]?.role === "billie") {
+            copy[li] = { ...copy[li], loading: false, codeSteps: [...(copy[li].codeSteps || []), step] };
+          }
+          return copy;
+        });
+      };
+      try {
+        const r = await fetch(`${BASE}/api/billie/code-agent/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ task: text.trim() }),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const reader = r.body?.getReader();
+        if (!reader) throw new Error("لا stream");
+        const dec = new TextDecoder();
+        let buf = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const ev: CodeStep = JSON.parse(line.slice(6));
+              appendStep(ev);
+              if (ev.type === "done") {
+                setChatHistory(h => {
+                  const copy = [...h];
+                  const li = copy.length - 1;
+                  if (copy[li]?.role === "billie") {
+                    const files = ev.modified_files || [];
+                    copy[li] = {
+                      ...copy[li], codeDone: true,
+                      text: `✅ ${ev.summary || "تمت العملية"}${files.length ? `\n\nالملفات المعدّلة:\n${files.map(f => `• ${f}`).join("\n")}` : ""}`,
+                      suggestions: files.length > 0 ? ["اعرض التغييرات", "شغّل واختبر", "أضف ميزة أخرى"] : ["اشرح ما تم", "اختبر الكود"],
+                    };
+                  }
+                  return copy;
+                });
+              }
+            } catch { /* skip */ }
+          }
+        }
+      } catch (err: any) {
+        appendStep({ type: "error", message: err?.message || "فشل وكيل الكود" });
+        setChatHistory(h => {
+          const copy = [...h];
+          if (copy[copy.length - 1]?.role === "billie") {
+            copy[copy.length - 1] = { ...copy[copy.length - 1], loading: false, text: `⚠️ فشل وكيل الكود: ${err?.message}` };
+          }
+          return copy;
+        });
+      }
+      setChatLoading(false);
+      return;
+    }
 
     // ── Media generation (concurrent) ──
     if (wantsImage || wantsAudio) {
@@ -618,7 +865,7 @@ export default function BilliePage() {
                 </button>
                 <div className="w-px h-4 bg-border/40" />
                 <span className="text-[9px] font-mono text-muted-foreground/50 flex items-center gap-1">
-                  <Mic size={8} /> اطلب صورة أو صوت مباشرةً
+                  <Code2 size={8} /> اطلب كوداً أو صورةً أو صوتاً مباشرةً
                 </span>
               </div>
               <div className="flex items-center gap-2.5">
@@ -652,13 +899,18 @@ export default function BilliePage() {
                   <div className={`flex-1 max-w-[83%] flex flex-col gap-2 ${msg.role === "user" ? "items-end" : "items-start"}`}>
 
                     {/* Loading dots */}
-                    {msg.loading && (
+                    {msg.loading && !msg.codeTask && (
                       <div className="flex gap-1.5 items-center px-4 py-3 rounded-2xl bg-primary/6 border border-primary/15 shadow-sm">
                         {[0,1,2].map(d => (
                           <div key={d} className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: `${d*0.18}s` }} />
                         ))}
                         <span className="text-[11px] text-muted-foreground/60 font-mono mr-1">بيليه تفكّر…</span>
                       </div>
+                    )}
+
+                    {/* ── Code Agent Panel ── */}
+                    {msg.codeTask && (msg.codeSteps || []).length >= 0 && (
+                      <CodeAgentPanel steps={msg.codeSteps || []} loading={!!msg.loading} done={!!msg.codeDone} />
                     )}
 
                     {/* Main bubble */}
