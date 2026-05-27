@@ -245,7 +245,8 @@ ${target_agent_id ? `• الوكيل المستهدف: ${target_agent_id}` : ""
 `;
 
   try {
-    const result = await callAI(
+    const result = await callAIForTask(
+      "text_complex",
       AGENT_SYSTEM_PROMPTS["billie"],
       `حلّل النظام بناءً على البيانات وقدّم تقريراً يشمل:
 1. تقييم الحالة العامة مع نقاط القوة والضعف
@@ -254,8 +255,7 @@ ${target_agent_id ? `• الوكيل المستهدف: ${target_agent_id}` : ""
 4. خطة التحسين المقترحة للأسبوع القادم
 
 البيانات:
-${analysisContext}`,
-      "flash"
+${analysisContext}`
     );
 
     const lines = result.text.split("\n").filter(l => l.trim());
@@ -336,7 +336,8 @@ router.post("/complaints", async (req, res) => {
   let billieResponse = `تم استلام شكواك بواسطة بيليه. الأولوية: ${severity === "critical" ? "عاجل جداً" : severity === "high" ? "مرتفعة" : "متوسطة"}. جاري التحقيق.`;
 
   try {
-    const result = await callAI(
+    const result = await callAIForTask(
+      "text_complex",
       AGENT_SYSTEM_PROMPTS["billie"],
       `مستخدم قدّم شكوى:
 العنوان: ${title}
@@ -344,8 +345,7 @@ router.post("/complaints", async (req, res) => {
 ${agent_id ? `الوكيل المعني: ${agent_id}` : ""}
 الخطورة: ${severity}
 
-اكتب رداً قصيراً (3-4 جمل) بالعربية يطمئن المستخدم، يوضح الإجراءات المتخذة، ويقدر الوقت المتوقع للحل.`,
-      "flash"
+اكتب رداً قصيراً (3-4 جمل) بالعربية يطمئن المستخدم، يوضح الإجراءات المتخذة، ويقدر الوقت المتوقع للحل.`
     );
     billieResponse = result.text;
   } catch (err: any) {
@@ -380,15 +380,15 @@ router.patch("/complaints/:id/resolve", async (req, res) => {
 
   let finalResponse = resolution_note || "تم حل هذه المشكلة بنجاح. شكراً لتواصلك.";
   try {
-    const r = await callAI(
+    const r = await callAIForTask(
+      "text_complex",
       AGENT_SYSTEM_PROMPTS["billie"],
       `أغلق هذه الشكوى بنجاح وأرسل رسالة ختامية احترافية:
 الشكوى: ${complaint.title}
 الوصف: ${complaint.description}
 ${resolution_note ? `ملاحظة الحل: ${resolution_note}` : ""}
 
-اكتب رسالة ختام قصيرة (2-3 جمل) تؤكد حل المشكلة وتشكر المستخدم.`,
-      "flash"
+اكتب رسالة ختام قصيرة (2-3 جمل) تؤكد حل المشكلة وتشكر المستخدم.`
     );
     finalResponse = r.text;
   } catch {}

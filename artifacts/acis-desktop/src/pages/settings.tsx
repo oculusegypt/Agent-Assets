@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useListAgents } from "@workspace/api-client-react";
+import { useUI } from "@/contexts/ui-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -43,6 +44,7 @@ const CLEARABLE_TABLES = [
 ];
 
 export default function SettingsPage() {
+  const { theme, sidebarCompact, setTheme, setSidebarCompact } = useUI();
   const [tab, setTab] = useState("ai");
   const [settings, setSettings] = useState<Setting[]>([]);
   const [changed, setChanged] = useState<Record<string, string>>({});
@@ -930,18 +932,28 @@ export default function SettingsPage() {
                 <option value="en">English</option>
               </select>
             </Row>
-            <Row label="المظهر" desc="النمط البصري للواجهة">
-              <select value={getSetting("ui.theme")} onChange={e => setSetting("ui.theme", e.target.value)}
-                className="bg-secondary border border-border rounded px-3 py-1.5 text-sm text-foreground">
-                <option value="dark">داكن (Dark)</option>
-                <option value="light">فاتح (Light)</option>
-              </select>
+            <Row label="المظهر" desc="يُطبَّق فوراً ويُحفَظ تلقائياً">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setTheme("dark"); setSetting("ui.theme", "dark"); }}
+                  className={`px-3 py-1.5 rounded text-xs font-mono border transition-all ${theme === "dark" ? "bg-primary/20 border-primary/50 text-primary" : "bg-secondary border-border text-muted-foreground hover:text-foreground"}`}>
+                  🌙 داكن
+                </button>
+                <button
+                  onClick={() => { setTheme("light"); setSetting("ui.theme", "light"); }}
+                  className={`px-3 py-1.5 rounded text-xs font-mono border transition-all ${theme === "light" ? "bg-amber-400/20 border-amber-400/50 text-amber-400" : "bg-secondary border-border text-muted-foreground hover:text-foreground"}`}>
+                  ☀️ فاتح
+                </button>
+              </div>
             </Row>
             <Row label="الحركات والانتقالات" desc="تفعيل التأثيرات البصرية في الواجهة">
               <Switch checked={getToggle("ui.animations")} onCheckedChange={v => setToggle("ui.animations", v)} />
             </Row>
-            <Row label="الشريط الجانبي المضغوط" desc="عرض أيقونات فقط في الشريط الجانبي">
-              <Switch checked={getToggle("ui.sidebar_compact")} onCheckedChange={v => setToggle("ui.sidebar_compact", v)} />
+            <Row label="الشريط الجانبي المضغوط" desc="يُطبَّق فوراً — أيقونات فقط بدون نصوص">
+              <Switch
+                checked={sidebarCompact}
+                onCheckedChange={v => { setSidebarCompact(v); setSetting("ui.sidebar_compact", v ? "true" : "false"); }}
+              />
             </Row>
             <Row label="معدل التحديث التلقائي (ثانية)" desc="تحديث البيانات كل X ثانية">
               <select value={getSetting("ui.refresh_interval_seconds")} onChange={e => setSetting("ui.refresh_interval_seconds", e.target.value)}

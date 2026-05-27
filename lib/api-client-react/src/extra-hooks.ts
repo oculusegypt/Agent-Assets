@@ -92,6 +92,8 @@ export function useGetGenerationJob(jobId: string | null) {
     queryKey: ["generation-job", jobId],
     queryFn: () => customFetch<any>(`/api/production/jobs/${jobId}`),
     enabled: !!jobId,
+    staleTime: 0,
+    refetchOnMount: true,
     refetchInterval: (query) => {
       const data = query.state.data as any;
       return data?.status === "running" ? 3000 : false;

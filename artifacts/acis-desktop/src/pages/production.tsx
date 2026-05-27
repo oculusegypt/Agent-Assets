@@ -10,8 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import {
   Film, Clapperboard, Image, Music, Mic, Video,
-  Play, Plus, CheckCircle2, Clock, Zap, ChevronLeft,
-  Star, Cpu, X, FileText, RefreshCw, Trash2, ListVideo,
+  Play, Plus, CheckCircle2, Clock, Zap, ChevronLeft, ChevronDown, ChevronUp,
+  Star, Cpu, X, FileText, RefreshCw, Trash2, ListVideo, Copy, Check,
 } from "lucide-react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 
@@ -35,6 +35,12 @@ const STATUS_AR: Record<string, string> = {
   failed: "فشل", concept: "فكرة أولية",
 };
 
+const PHASE_AR: Record<string, string> = {
+  script: "السيناريو", storyboard: "اللوحة المصورة",
+  audio: "الصوت", music: "الموسيقى", assembly: "التجميع",
+  images: "الصور", video: "الفيديو",
+};
+
 const MODEL_TYPE_ICONS: Record<string, any> = {
   video: Video, image: Image, audio: Music, tts: Mic, music: Music, language: Zap,
 };
@@ -49,76 +55,154 @@ const ALL_PHASES = [
   { type: "assembly",   label: "جدول المونتاج النهائي",     icon: Zap },
 ];
 
-function JobResultViewer({ jobId, onClose }: { jobId: string; onClose: () => void }) {
-  const { data: job, isLoading, refetch } = useGetGenerationJob(jobId);
+function JobResultPanel({ jobId, onClose }: { jobId: string; onClose: () => void }) {
+  const { data: job, isLoading, isFetching, refetch } = useGetGenerationJob(jobId);
+  const [copied, setCopied] = useState(false);
 
-  // Auto-poll while running
   useEffect(() => {
-    if (job?.status !== "running") return;
-    const interval = setInterval(() => refetch(), 3000);
-    return () => clearInterval(interval);
-  }, [job?.status, refetch]);
-
-  const phaseNameAr: Record<string, string> = {
-    script: "السيناريو", storyboard: "اللوحة المصورة",
-    audio: "الصوت", music: "الموسيقى", assembly: "التجميع",
-    images: "الصور", video: "الفيديو",
-  };
+    if (job?.status === "running") return;
+    refetch();
+  }, [jobId]);
 
   const handleCopy = () => {
-    if (job?.result) navigator.clipboard?.writeText(job.result);
+    const text = job?.result || "";
+    if (text) {
+      navigator.clipboard?.writeText(text).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm" dir="rtl">
-      <div className="bg-card border border-purple-500/30 rounded-lg w-full max-w-3xl max-h-[85vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-border/50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" dir="rtl" onClick={onClose}>
+      <div
+        className="bg-card border border-purple-500/40 rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl shadow-black/50"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-border/50 shrink-0">
           <div className="flex items-center gap-2">
-            <button onClick={onClose} className="p-1 hover:bg-secondary rounded"><X size={16} /></button>
+            <button onClick={onClose} className="p-1.5 hover:bg-secondary rounded transition-colors">
+              <X size={15} />
+            </button>
             {job?.result && (
               <button onClick={handleCopy}
-                className="text-[10px] font-mono text-muted-foreground hover:text-purple-400 px-2 py-1 rounded border border-border/30 hover:border-purple-500/30 transition-colors">
-                نسخ النتيجة
+                className="flex items-center gap-1.5 text-xs font-mono text-muted-foreground hover:text-purple-400 px-2.5 py-1 rounded border border-border/30 hover:border-purple-500/30 transition-colors">
+                {copied ? <><Check size={12} className="text-emerald-400" /> نُسخ</> : <><Copy size={12} /> نسخ النتيجة</>}
               </button>
             )}
+            {isFetching && <RefreshCw size={12} className="text-purple-400 animate-spin" />}
           </div>
           <div className="text-right">
-            <h3 className="font-bold">نتيجة التوليد الذكي</h3>
+            <h3 className="font-bold text-sm">نتيجة التوليد الذكي</h3>
             {job && (
-              <p className="text-xs text-muted-foreground font-mono">
-                {phaseNameAr[job.phase] || job.phase} · {job.model_used} ·
-                <span className={job.status === "completed" ? " text-emerald-400" : job.status === "failed" ? " text-red-400" : " text-amber-400"}>
-                  {job.status === "completed" ? " مكتمل ✓" : job.status === "failed" ? " فشل ✗" : " جارٍ…"}
+              <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                {PHASE_AR[job.phase] || job.phase}
+                {job.model_used && <span className="text-purple-400/70"> · {job.model_used}</span>}
+                <span className={
+                  job.status === "completed" ? " text-emerald-400" :
+                  job.status === "failed" ? " text-red-400" : " text-amber-400"
+                }>
+                  {job.status === "completed" ? " · مكتمل ✓" : job.status === "failed" ? " · فشل ✗" : " · جارٍ…"}
                 </span>
               </p>
             )}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-4">
-          {isLoading && (
-            <div className="text-center py-8 text-muted-foreground">
-              <Clock size={24} className="mx-auto mb-2 animate-spin" />
-              <p className="text-sm">جارٍ التحميل…</p>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-5 min-h-0">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+              <RefreshCw size={28} className="animate-spin mb-3 text-purple-400" />
+              <p className="text-sm">جارٍ تحميل النتيجة…</p>
             </div>
-          )}
-          {job?.status === "running" && !job?.result && (
-            <div className="text-center py-8 text-amber-400">
-              <RefreshCw size={24} className="mx-auto mb-2 animate-spin" />
-              <p className="text-sm font-mono">الذكاء الاصطناعي يعمل… يتم التحديث تلقائياً</p>
-              <p className="text-xs text-muted-foreground mt-1">الوقت المتوقع: {job.estimated_seconds}ث</p>
+          ) : job?.status === "running" ? (
+            <div className="flex flex-col items-center justify-center py-16 text-amber-400">
+              <RefreshCw size={28} className="animate-spin mb-3" />
+              <p className="text-sm font-mono">الذكاء الاصطناعي يعمل…</p>
+              <p className="text-xs text-muted-foreground mt-2">يتم التحديث تلقائياً كل 3 ثوانٍ</p>
+              {job.estimated_seconds && (
+                <p className="text-xs text-muted-foreground mt-1">الوقت المتوقع: ~{job.estimated_seconds}ث</p>
+              )}
             </div>
-          )}
-          {job?.result && (
-            <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90 font-mono" dir="rtl">
+          ) : job?.result ? (
+            <div className="text-sm leading-loose whitespace-pre-wrap text-foreground/90 font-mono text-right" dir="rtl" lang="ar">
               {job.result}
             </div>
-          )}
-          {job?.status === "failed" && !job?.result && (
-            <div className="text-red-400 text-sm p-3 border border-red-400/20 rounded bg-red-400/5">
-              فشل التوليد — تحقق من مفاتيح API في الإعدادات
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="w-12 h-12 rounded-full bg-secondary flex items-center justify-center mb-3">
+                <FileText size={20} className="text-muted-foreground" />
+              </div>
+              <p className="text-sm text-muted-foreground">لا يوجد محتوى محفوظ لهذه المهمة</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">أعد تشغيل هذه المرحلة لتوليد المحتوى</p>
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function InlineJobResult({ jobId }: { jobId: string }) {
+  const { data: job, isLoading, isFetching } = useGetGenerationJob(jobId);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    if (job?.result) {
+      navigator.clipboard?.writeText(job.result).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="mt-2 p-3 bg-secondary/50 rounded border border-border/30">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <RefreshCw size={11} className="animate-spin" />
+          <span className="font-mono">جارٍ التحميل…</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (job?.status === "running") {
+    return (
+      <div className="mt-2 p-3 bg-amber-400/5 rounded border border-amber-400/20">
+        <div className="flex items-center gap-2 text-xs text-amber-400">
+          <RefreshCw size={11} className="animate-spin" />
+          <span className="font-mono">الذكاء الاصطناعي يعمل… يتحدث كل 3ث</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!job?.result) {
+    return (
+      <div className="mt-2 p-3 bg-secondary/50 rounded border border-border/30">
+        <p className="text-xs text-muted-foreground font-mono text-right">لا يوجد محتوى — أعد تشغيل المرحلة</p>
+      </div>
+    );
+  }
+
+  const preview = job.result.slice(0, 400);
+  const isTruncated = job.result.length > 400;
+
+  return (
+    <div className="mt-2 bg-secondary/30 rounded border border-border/30 overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/20">
+        <button onClick={handleCopy}
+          className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground hover:text-purple-400 transition-colors">
+          {copied ? <><Check size={10} className="text-emerald-400" /> نُسخ</> : <><Copy size={10} /> نسخ</>}
+        </button>
+        <span className="text-[10px] font-mono text-muted-foreground/50">{job.result.length} حرف</span>
+      </div>
+      <div className="p-3 text-xs leading-loose whitespace-pre-wrap text-foreground/80 font-mono text-right max-h-56 overflow-y-auto" dir="rtl" lang="ar">
+        {preview}{isTruncated && <span className="text-purple-400/60">…</span>}
       </div>
     </div>
   );
@@ -135,8 +219,8 @@ export default function ProductionPage() {
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [runningAll, setRunningAll] = useState(false);
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const [showJobModal, setShowJobModal] = useState(false);
+  const [viewJobId, setViewJobId] = useState<string | null>(null);
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
   const [form, setForm] = useState({ title: "", story_prompt: "", language: "ar", type: "short", duration_seconds: 90 });
 
   const { data: projectJobs, refetch: refetchJobs } = useGetProjectJobs(selectedProject);
@@ -154,7 +238,6 @@ export default function ProductionPage() {
     },
   });
 
-  // Auto-poll running jobs every 4s
   const hasRunningJob = projectJobs?.some((j: any) => j.status === "running");
   useEffect(() => {
     if (!hasRunningJob) return;
@@ -176,12 +259,12 @@ export default function ProductionPage() {
 
   async function handleGenerate(projectId: string, type: string) {
     setGenerating(true);
+    setExpandedJobId(null);
     try {
       const res = await generateProd.mutateAsync({ projectId, data: { type } as any });
       if (res?.job_id) {
-        setActiveJobId(res.job_id);
-        setShowJobModal(true);
-        setTimeout(() => { refetchProjects(); refetchJobs(); qc.invalidateQueries(); }, 2000);
+        setExpandedJobId(res.job_id);
+        setTimeout(() => { refetchProjects(); refetchJobs(); qc.invalidateQueries(); }, 1500);
       }
     } catch (e: any) {
       console.error(e);
@@ -197,7 +280,6 @@ export default function ProductionPage() {
       try {
         const res = await generateProd.mutateAsync({ projectId: selectedProject, data: { type: phase } as any });
         if (res?.job_id) {
-          // Wait for this phase to complete before starting next
           let attempts = 0;
           while (attempts < 60) {
             await new Promise(r => setTimeout(r, 4000));
@@ -225,6 +307,9 @@ export default function ProductionPage() {
 
   return (
     <div className="space-y-6" dir="rtl">
+      {/* Modal viewer */}
+      {viewJobId && <JobResultPanel jobId={viewJobId} onClose={() => setViewJobId(null)} />}
+
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-purple-500/20 border border-purple-500/50 flex items-center justify-center text-purple-400">
@@ -253,6 +338,7 @@ export default function ProductionPage() {
 
       {tab === "projects" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Projects List */}
           <div className="lg:col-span-2 space-y-4">
             {pLoad ? (
               Array(3).fill(0).map((_, i) => <Skeleton key={i} className="h-32 bg-card border border-border/50" />)
@@ -266,7 +352,10 @@ export default function ProductionPage() {
               </div>
             ) : projects.map(p => (
               <div key={p.id} className="relative group">
-                <button onClick={() => setSelectedProject(p.id === selectedProject ? null : p.id)}
+                <button onClick={() => {
+                    setSelectedProject(p.id === selectedProject ? null : p.id);
+                    setExpandedJobId(null);
+                  }}
                   className={`w-full text-right p-5 rounded border transition-all ${selectedProject === p.id ? "border-purple-400/50 bg-purple-500/5" : "border-border/50 bg-card hover:border-purple-400/30"}`}>
                   <div className="flex items-start justify-between mb-3">
                     <div className="text-right text-xs font-mono text-muted-foreground">
@@ -317,17 +406,17 @@ export default function ProductionPage() {
             ))}
           </div>
 
+          {/* Right Panel */}
           <div className="space-y-4">
             {projectData ? (
               <>
                 <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest">إجراءات الإنتاج</div>
                 <div className="p-4 bg-card border border-border/50 rounded space-y-3">
-                  <div className="font-bold mb-2 text-right">{projectData.title_ar || projectData.title}</div>
+                  <div className="font-bold mb-1 text-right">{projectData.title_ar || projectData.title}</div>
                   <p className="text-xs text-muted-foreground text-right leading-relaxed border-r-2 border-purple-500/30 pr-2">
                     {projectData.story_prompt?.substring(0, 150)}{(projectData.story_prompt?.length ?? 0) > 150 ? "…" : ""}
                   </p>
 
-                  {/* Run All Phases */}
                   <Button
                     onClick={handleRunAll}
                     disabled={runningAll || generating}
@@ -350,6 +439,7 @@ export default function ProductionPage() {
                       </Button>
                     ))}
                   </div>
+
                   {(generating || runningAll) && (
                     <div className="text-xs text-purple-400 font-mono text-center animate-pulse">
                       الذكاء الاصطناعي يعمل…
@@ -357,25 +447,65 @@ export default function ProductionPage() {
                   )}
                 </div>
 
+                {/* Jobs List */}
                 {projectJobs && projectJobs.length > 0 && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest">مهام التوليد</div>
-                      {hasRunningJob && <div className="text-[10px] text-amber-400 font-mono animate-pulse">يتحدث تلقائياً…</div>}
+                      <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest">نتائج التوليد</div>
+                      {hasRunningJob && <div className="text-[10px] text-amber-400 font-mono animate-pulse flex items-center gap-1"><RefreshCw size={9} className="animate-spin" /> يتحدث…</div>}
                     </div>
-                    {projectJobs.slice(0, 8).map((job: any) => (
-                      <button key={job.id}
-                        onClick={() => { setActiveJobId(job.id); setShowJobModal(true); }}
-                        className="w-full p-2 rounded border border-border/40 bg-card hover:border-purple-400/30 text-right text-xs flex items-center justify-between gap-2">
-                        <span className={`font-mono shrink-0 ${job.status === "completed" ? "text-emerald-400" : job.status === "failed" ? "text-red-400" : "text-amber-400 animate-pulse"}`}>
-                          {job.status === "completed" ? "✓" : job.status === "failed" ? "✗" : "⋯"}
-                        </span>
-                        <span className="flex-1 truncate text-muted-foreground">{
-                          { script: "السيناريو", storyboard: "اللوحة المصورة", audio: "الصوت", music: "الموسيقى", assembly: "التجميع", images: "الصور", video: "الفيديو" }[job.phase] || job.phase
-                        }</span>
-                        <span className="text-purple-400/60 shrink-0">عرض ←</span>
-                      </button>
-                    ))}
+
+                    {projectJobs.slice(0, 12).map((job: any) => {
+                      const isExpanded = expandedJobId === job.id;
+                      const hasResult = !!(job.result || (job.status !== "running" && job.status !== "failed"));
+                      return (
+                        <div key={job.id} className="rounded border border-border/40 bg-card overflow-hidden">
+                          <div className="flex items-center gap-2 p-2.5">
+                            {/* Status dot */}
+                            <span className={`font-mono text-sm shrink-0 ${
+                              job.status === "completed" ? "text-emerald-400" :
+                              job.status === "failed" ? "text-red-400" :
+                              "text-amber-400 animate-pulse"
+                            }`}>
+                              {job.status === "completed" ? "✓" : job.status === "failed" ? "✗" : "⋯"}
+                            </span>
+                            {/* Phase name */}
+                            <span className="flex-1 text-xs text-foreground font-medium text-right">
+                              {PHASE_AR[job.phase] || job.phase}
+                            </span>
+                            {/* Model */}
+                            {job.model_used && (
+                              <span className="text-[10px] text-purple-400/50 font-mono shrink-0 hidden sm:block">
+                                {job.model_used.split("-").slice(0, 2).join("-")}
+                              </span>
+                            )}
+                            {/* Expand / Full view buttons */}
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                onClick={() => setExpandedJobId(isExpanded ? null : job.id)}
+                                className="text-[10px] text-muted-foreground hover:text-purple-400 px-1.5 py-0.5 rounded border border-border/30 hover:border-purple-500/30 transition-colors font-mono flex items-center gap-0.5"
+                                title="عرض مضمّن">
+                                {isExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                                <span>عرض</span>
+                              </button>
+                              <button
+                                onClick={() => setViewJobId(job.id)}
+                                className="text-[10px] text-muted-foreground hover:text-purple-400 px-1.5 py-0.5 rounded border border-border/30 hover:border-purple-500/30 transition-colors font-mono"
+                                title="عرض كامل في نافذة">
+                                ⛶
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Inline result */}
+                          {isExpanded && (
+                            <div className="border-t border-border/30 px-2.5 pb-2.5">
+                              <InlineJobResult jobId={job.id} />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </>
@@ -447,53 +577,49 @@ export default function ProductionPage() {
             <div className="space-y-1">
               <label className="text-xs font-mono text-muted-foreground uppercase tracking-widest block text-right">عنوان المشروع</label>
               <Input required placeholder="الخوارزمي / The Algorithm" value={form.title}
-                onChange={e => setForm(f => ({ ...f, title: e.target.value }))} dir="rtl" className="text-right" />
+                onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                className="bg-secondary border-border/50 text-right" dir="rtl" />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-mono text-muted-foreground uppercase tracking-widest block text-right">فكرة القصة</label>
-              <Textarea required rows={5}
-                placeholder="اكتب القصة هنا…&#10;&#10;مثال: قصة عالم عربي يكتشف آلة الزمن في القاهرة القديمة"
-                value={form.story_prompt}
+              <Textarea required rows={5} placeholder="اكتب فكرة القصة بالتفصيل…" value={form.story_prompt}
                 onChange={e => setForm(f => ({ ...f, story_prompt: e.target.value }))}
-                dir="rtl" className="text-right" />
+                className="bg-secondary border-border/50 text-right resize-none" dir="rtl" />
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
-                <label className="text-xs font-mono text-muted-foreground uppercase tracking-widest block text-right">اللغة</label>
+                <label className="text-xs font-mono text-muted-foreground block text-right">اللغة</label>
                 <select value={form.language} onChange={e => setForm(f => ({ ...f, language: e.target.value }))}
-                  className="w-full bg-input border border-border/50 rounded px-3 py-2 text-sm text-foreground text-right" dir="rtl">
+                  className="w-full bg-secondary border border-border/50 rounded px-2 py-1.5 text-sm text-foreground">
                   <option value="ar">عربي</option>
-                  <option value="en">إنجليزي</option>
-                  <option value="both">ثنائي اللغة</option>
+                  <option value="en">English</option>
+                  <option value="bilingual">ثنائي</option>
                 </select>
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-mono text-muted-foreground uppercase tracking-widest block text-right">النوع</label>
+                <label className="text-xs font-mono text-muted-foreground block text-right">النوع</label>
                 <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
-                  className="w-full bg-input border border-border/50 rounded px-3 py-2 text-sm text-foreground text-right" dir="rtl">
-                  <option value="short">فيلم قصير</option>
+                  className="w-full bg-secondary border border-border/50 rounded px-2 py-1.5 text-sm text-foreground">
+                  <option value="short">قصير</option>
+                  <option value="medium">متوسط</option>
+                  <option value="feature">طويل</option>
                   <option value="documentary">وثائقي</option>
-                  <option value="film">فيلم روائي</option>
-                  <option value="series">حلقة مسلسل</option>
+                  <option value="commercial">إعلان</option>
                 </select>
               </div>
               <div className="space-y-1">
-                <label className="text-xs font-mono text-muted-foreground uppercase tracking-widest block text-right">المدة (ثانية)</label>
-                <Input type="number" min={30} max={600} value={form.duration_seconds}
-                  onChange={e => setForm(f => ({ ...f, duration_seconds: Number(e.target.value) }))} className="text-right" dir="rtl" />
+                <label className="text-xs font-mono text-muted-foreground block text-right">المدة (ث)</label>
+                <Input type="number" min={10} max={7200} value={form.duration_seconds}
+                  onChange={e => setForm(f => ({ ...f, duration_seconds: Number(e.target.value) }))}
+                  className="bg-secondary border-border/50 text-right" />
               </div>
             </div>
             <Button type="submit" disabled={createProject.isPending}
-              className="w-full gap-2 bg-purple-500 hover:bg-purple-600 text-white">
-              {createProject.isPending ? <Clock size={14} className="animate-spin" /> : <Play size={14} />}
-              {createProject.isPending ? "جارٍ الإنشاء…" : "إطلاق الإنتاج"}
+              className="w-full gap-2 bg-purple-500/20 border border-purple-500/40 hover:bg-purple-500/30 text-purple-300">
+              {createProject.isPending ? <><RefreshCw size={14} className="animate-spin" /> جارٍ الإنشاء…</> : <><Plus size={14} /> إنشاء المشروع</>}
             </Button>
           </form>
         </div>
-      )}
-
-      {showJobModal && activeJobId && (
-        <JobResultViewer jobId={activeJobId} onClose={() => setShowJobModal(false)} />
       )}
     </div>
   );

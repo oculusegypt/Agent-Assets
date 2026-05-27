@@ -37,7 +37,8 @@ router.post("/", async (req, res) => {
     });
     try {
       const systemPrompt = getAgentSystemPrompt(agent_id, agentNameAr);
-      const result = await callAI(systemPrompt, initial_message, "flash");
+      const taskType = getAgentTaskType(agent_id);
+      const result = await callAIForTask(taskType, systemPrompt, initial_message);
       await db.insert(messagesTable).values({
         id: randomUUID(), conversation_id: id, role: "assistant",
         content: result.text, model_used: result.model, tokens_used: result.tokens,

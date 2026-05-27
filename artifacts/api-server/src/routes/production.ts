@@ -200,7 +200,8 @@ router.post("/projects/:projectId/generate", async (req, res) => {
         aiResult = r.text;
       } else if (safePhase === "storyboard") {
         const [boardRes, promptRes] = await Promise.all([
-          callAI(
+          callAIForTask(
+            "text_complex",
             AGENT_SYSTEM_PROMPTS["visual-storyboard"],
             `صمم لوحة مصورة سينمائية شاملة للمشروع التالي:
 عنوان: ${title}
@@ -213,20 +214,20 @@ router.post("/projects/:projectId/generate", async (req, res) => {
 • الإضاءة والألوان السائدة
 • الشخصيات والأماكن
 • المزاج العاطفي
-• مدة المشهد التقريبية`,
-            "flash"
+• مدة المشهد التقريبية`
           ),
-          callAI(
+          callAIForTask(
+            "text_complex",
             AGENT_SYSTEM_PROMPTS["ai-prompt-director"],
             `استناداً إلى مشروع "${title}" بقصة: ${story}
 اكتب برومبت إنجليزية احترافية لـ FLUX.1 Pro لتوليد صور سينمائية لـ 5 مشاهد رئيسية.
-لكل مشهد: اكتب برومبت إنجليزي مفصّل يتضمن: الأسلوب البصري، الإضاءة، زاوية الكاميرا، الألوان، المزاج.`,
-            "flash"
+لكل مشهد: اكتب برومبت إنجليزي مفصّل يتضمن: الأسلوب البصري، الإضاءة، زاوية الكاميرا، الألوان، المزاج.`
           ),
         ]);
         aiResult = `═══ اللوحة المصورة ═══\n\n${boardRes.text}\n\n═══ برومبت توليد الصور (FLUX.1) ═══\n\n${promptRes.text}`;
       } else if (safePhase === "audio") {
-        const r = await callAI(
+        const r = await callAIForTask(
+          "text_complex",
           AGENT_SYSTEM_PROMPTS["sound-music"],
           `صمم المشهد الصوتي الكامل لمشروع "${title}":
 القصة: ${story}
@@ -236,12 +237,12 @@ router.post("/projects/:projectId/generate", async (req, res) => {
 1. الثيم الصوتي الرئيسي (نوع الصوت، المزاج، الآلات)
 2. مواصفات التعليق الصوتي لـ Kokoro TTS
 3. نص التعليق الصوتي المقترح
-4. توجيهات المؤثرات الصوتية لكل مشهد`,
-          "flash"
+4. توجيهات المؤثرات الصوتية لكل مشهد`
         );
         aiResult = r.text;
       } else if (safePhase === "music") {
-        const r = await callAI(
+        const r = await callAIForTask(
+          "text_complex",
           AGENT_SYSTEM_PROMPTS["sound-music"],
           `أعدّ موسيقى تصويرية متكاملة لمشروع "${title}":
 القصة: ${story}
@@ -251,12 +252,12 @@ router.post("/projects/:projectId/generate", async (req, res) => {
 1. الهوية الموسيقية الكاملة (الأسلوب، الإيقاع، الآلات الرئيسية)
 2. توجيهات MusicGen 3.0 لكل قسم موسيقي
 3. جدول الموسيقى عبر المشاهد (دخول وخروج)
-4. كلمات أغنية الشارة إذا كانت مناسبة`,
-          "flash"
+4. كلمات أغنية الشارة إذا كانت مناسبة`
         );
         aiResult = r.text;
       } else if (safePhase === "assembly") {
-        const r = await callAI(
+        const r = await callAIForTask(
+          "text_simple",
           AGENT_SYSTEM_PROMPTS["timeline-assembly"],
           `نسّق الجدول الزمني النهائي للمشروع "${title}":
 القصة: ${story}
@@ -267,17 +268,16 @@ router.post("/projects/:projectId/generate", async (req, res) => {
 2. نقاط القطع والانتقالات المقترحة
 3. ترتيب الأصول الصوتية والمرئية
 4. ملاحظات ما بعد الإنتاج
-5. قائمة التسليم النهائية`,
-          "flash"
+5. قائمة التسليم النهائية`
         );
         aiResult = r.text;
       } else {
-        const r = await callAI(
+        const r = await callAIForTask(
+          "orchestration",
           AGENT_SYSTEM_PROMPTS["acis-master"],
           `أدر مرحلة "${phaseNames[safePhase] || safePhase}" للمشروع "${title}". 
 القصة: ${story}
-قدّم خطة تفصيلية وتقريراً بالتنفيذ المقترح لهذه المرحلة.`,
-          "flash"
+قدّم خطة تفصيلية وتقريراً بالتنفيذ المقترح لهذه المرحلة.`
         );
         aiResult = r.text;
       }

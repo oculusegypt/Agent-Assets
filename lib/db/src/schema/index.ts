@@ -144,6 +144,20 @@ export const systemSettingsTable = sqliteTable("system_settings", {
   updated_at: integer("updated_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
 });
 
+export const agentPatchesTable = sqliteTable("agent_patches", {
+  id: text("id").primaryKey(),
+  agent_id: text("agent_id").notNull(),
+  patch_type: text("patch_type").notNull(),
+  field: text("field").notNull(),
+  old_value: text("old_value"),
+  new_value: text("new_value").notNull(),
+  reason: text("reason").notNull(),
+  applied_by: text("applied_by").notNull().default("billie"),
+  status: text("status").notNull().default("active"),
+  created_at: integer("created_at", { mode: "timestamp" }).default(sql`(unixepoch())`),
+  rolled_back_at: integer("rolled_back_at", { mode: "timestamp" }),
+});
+
 export const insertAgentSchema = createInsertSchema(agentsTable);
 export const insertExecutionSchema = createInsertSchema(agentExecutionsTable);
 export const insertAlertSchema = createInsertSchema(systemAlertsTable);
