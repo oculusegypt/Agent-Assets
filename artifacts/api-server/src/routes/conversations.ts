@@ -4,6 +4,7 @@ import { conversationsTable, messagesTable, agentsTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { callAIWithHistory, callAI, getAgentSystemPrompt } from "../lib/ai.js";
+import { broadcast } from "../lib/ws.js";
 
 const router = Router();
 
@@ -99,6 +100,8 @@ router.post("/:conversationId/messages", async (req, res) => {
     await db.update(conversationsTable).set({
       message_count: conv.message_count + 2, last_message_at: new Date(),
     }).where(eq(conversationsTable.id, conversationId));
+
+    broadcast("conversation_updated", { conversationId });
 
     res.json({ ...response, created_at: response.created_at?.toISOString() || new Date().toISOString() });
   } catch (err: any) {

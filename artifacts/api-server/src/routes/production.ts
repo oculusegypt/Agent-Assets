@@ -4,6 +4,7 @@ import { projectsTable, generationJobsTable, activityTable } from "@workspace/db
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { callAI, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
+import { broadcast } from "../lib/ws.js";
 
 const router = Router();
 
@@ -65,6 +66,9 @@ router.post("/projects", async (req, res) => {
     title: `مشروع جديد: ${title}`,
     description: `النوع: ${typeNames[type] || type} | اللغة: ${language === "ar" ? "عربية" : language === "en" ? "إنجليزية" : "ثنائية"} | المدة: ${duration_seconds}ث`,
   });
+
+  broadcast("project_updated");
+  broadcast("activity_updated");
 
   res.status(201).json({
     ...project,
@@ -154,6 +158,9 @@ router.post("/projects/:projectId/generate", async (req, res) => {
     title: `بدأ التوليد: ${phaseNames[safePhase] || safePhase}`,
     description: `المشروع: ${project.titleAr || project.title} | النموذج: ${modelId} | الجودة: ${quality || "عالي"}`,
   });
+
+  broadcast("project_updated", { projectId, phase: safePhase, status: "running" });
+  broadcast("activity_updated");
 
   res.json({
     job_id: jobId, phase: safePhase, status: "running",

@@ -4,6 +4,7 @@ import { agentsTable, systemAlertsTable, complaintsTable, activityTable } from "
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { callAI, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
+import { broadcast } from "../lib/ws.js";
 
 const router = Router();
 
@@ -77,11 +78,11 @@ ${systemContext}`;
 
   try {
     const { callAIWithHistory } = await import("../lib/ai.js");
-    const msgs = [
-      ...history.slice(-6).map((h: any) => ({ role: h.role, parts: [{ text: h.text }] })),
-      { role: "user" as const, parts: [{ text: message }] },
-    ];
-    const result = await callAIWithHistory(billiePrompt, msgs, "pro");
+    const msgs = history.slice(-6).map((h: any) => ({
+      role: (h.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
+      content: h.text || h.content || "",
+    }));
+    const result = await callAIWithHistory(billiePrompt, msgs, message, "flash");
 
     await db.insert(activityTable).values({
       id: randomUUID(), type: "billie_alert",
@@ -144,6 +145,9 @@ router.post("/alerts", async (req, res) => {
     description: message.substring(0, 150),
   });
 
+  broadcast("alerts_updated");
+  broadcast("activity_updated");
+
   res.status(201).json({
     ...alert,
     created_at: alert.created_at?.toISOString() || new Date().toISOString(),
@@ -158,6 +162,7 @@ router.patch("/alerts/:alertId/resolve", async (req, res) => {
     resolved_at: new Date(),
   }).where(eq(systemAlertsTable.id, alertId));
 
+  broadcast("alerts_updated");
   res.json({ success: true, resolved_at: new Date().toISOString() });
 });
 

@@ -1,0 +1,1 @@
+- [Gemini model selection](gemini-model.md) — free tier key: use gemini-2.5-flash-lite (works), not 2.5-flash (20 RPD) or 2.5-pro (404)

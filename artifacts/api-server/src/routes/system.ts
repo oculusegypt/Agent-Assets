@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { agentsTable, agentExecutionsTable, projectsTable, activityTable, systemAlertsTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { broadcast } from "../lib/ws.js";
 import { callAI, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
 
 const SERVER_START = Date.now();
@@ -155,6 +156,10 @@ router.post("/health-check", async (_req, res) => {
     description: `الصحة: ${Math.round(healthScore)}% | تنبيهات جديدة: ${newAlerts.length} | الوكلاء: ${online}/${agents.length}`,
   });
 
+  broadcast("alerts_updated");
+  broadcast("activity_updated");
+  broadcast("metrics_updated");
+
   res.json({
     health_score: Math.round(healthScore),
     agents_checked: agents.length,
@@ -219,6 +224,10 @@ router.post("/seed-agents", async (_req, res) => {
     title: "تهيئة الوكلاء اكتملت",
     description: `زُرع ${seeded} وكيل جديد · حُدِّث ${updated} وكيل · الإجمالي ${AGENT_CATALOG.length} وكيل`,
   });
+
+  broadcast("agents_updated");
+  broadcast("activity_updated");
+  broadcast("metrics_updated");
 
   res.json({ success: true, seeded, updated, total: AGENT_CATALOG.length });
 });

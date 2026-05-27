@@ -4,6 +4,7 @@ import { nexusTasksTable, activityTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { callAI } from "../lib/ai.js";
+import { broadcast } from "../lib/ws.js";
 
 const router = Router();
 
@@ -218,6 +219,9 @@ router.post("/tasks", async (req, res) => {
     description: `${title} | النوع: ${typeAr[type] || type} | الأولوية: ${priority}`,
   });
 
+  broadcast("nexus_updated");
+  broadcast("activity_updated");
+
   res.status(201).json({
     ...task,
     created_at: task.created_at?.toISOString() || new Date().toISOString(),
@@ -241,6 +245,9 @@ router.post("/tasks", async (req, res) => {
         title: `${assignedAgent} أكمل المهمة`,
         description: `${title} | ${aiRes.tokens} رمز | ${aiRes.model}`,
       });
+      broadcast("nexus_updated");
+      broadcast("activity_updated");
+      broadcast("metrics_updated");
     } catch (err: any) {
       await db.update(nexusTasksTable).set({
         status: "failed",

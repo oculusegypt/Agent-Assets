@@ -152,10 +152,10 @@ router.post("/test-ai", async (req, res) => {
     if (!key) return res.json({ success: false, error: "GEMINI_API_KEY غير مضبوط في البيئة أو قاعدة البيانات", latency_ms: 0 });
     try {
       const g = new GoogleGenerativeAI(key);
-      const m = g.getGenerativeModel({ model: "gemini-2.5-flash" });
+      const m = g.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
       const r = await m.generateContent({ contents: [{ role: "user", parts: [{ text: "قل: متصل" }] }] });
       const text = r.response.text();
-      return res.json({ success: true, response: text.substring(0, 100), latency_ms: Date.now() - start, model: "gemini-2.5-flash" });
+      return res.json({ success: true, response: text.substring(0, 100), latency_ms: Date.now() - start, model: "gemini-2.5-flash-lite" });
     } catch (e: any) {
       return res.json({ success: false, error: e?.message || "خطأ غير معروف", latency_ms: Date.now() - start });
     }

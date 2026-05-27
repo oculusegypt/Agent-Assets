@@ -12,16 +12,22 @@ import CaeosPage from "./pages/caeos";
 import ConversationsPage from "./pages/conversations";
 import SettingsPage from "./pages/settings";
 import NotFound from "@/pages/not-found";
+import { useRealtime } from "./hooks/use-realtime";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      staleTime: 30_000,
-      refetchInterval: 30_000,
+      staleTime: 10_000,
+      refetchInterval: false,
     },
   },
 });
+
+function RealtimeProvider({ children }: { children: React.ReactNode }) {
+  useRealtime();
+  return <>{children}</>;
+}
 
 function Router() {
   return (
@@ -46,7 +52,9 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
+          <RealtimeProvider>
+            <Router />
+          </RealtimeProvider>
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

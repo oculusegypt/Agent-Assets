@@ -4,6 +4,7 @@ import { agentsTable, agentExecutionsTable, activityTable } from "@workspace/db"
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { callAI, getAgentSystemPrompt, getAgentTier, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
+import { broadcast } from "../lib/ws.js";
 
 const router = Router();
 
@@ -73,6 +74,11 @@ router.post("/:agentId/execute", async (req, res) => {
       title: `${agent.nameAr || agent.name} أكمل المهمة`,
       description: `المهمة: ${action} | المدة: ${Math.floor(duration / 1000)}ث | الرموز: ${tokenCount} | النموذج: ${modelUsed}`,
     });
+
+    broadcast("agent_executed", { agentId, action, status: "completed", tokens: tokenCount, model: modelUsed, duration_ms: duration });
+    broadcast("agents_updated");
+    broadcast("activity_updated");
+    broadcast("metrics_updated");
 
     res.json({
       id: execId, agentId, action, status: "completed", result, error: null,

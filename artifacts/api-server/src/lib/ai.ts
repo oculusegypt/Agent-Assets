@@ -57,23 +57,24 @@ export interface AICallOptions {
  * "pro" = Gemini 2.5 Pro / Qwen Max  (complex creative or analytical)
  * "flash" = Gemini 2.5 Flash / Qwen Plus (fast tasks, monitoring)
  */
+// All agents use flash tier — gemini-2.5-pro returns 404 on this key; flash works reliably.
 const AGENT_TIER_MAP: Record<string, TaskTier> = {
-  "billie":              "pro",
-  "story-architect":     "pro",
-  "director-agent":      "pro",
-  "cinematic-director":  "pro",
-  "emotional-narrative": "pro",
-  "critic-agent":        "pro",
-  "visual-storyboard":   "pro",
-  "ai-prompt-director":  "pro",
-  "model-orchestrator":  "pro",
-  "stv-master":          "pro",
-  "honesty-auditor":     "pro",
-  "caeos-master":        "pro",
-  "nexus-master":        "pro",
-  "scene-breakdown":     "pro",
-  "sound-music":         "pro",
-  "acis-master":         "pro",
+  "billie":              "flash",
+  "story-architect":     "flash",
+  "director-agent":      "flash",
+  "cinematic-director":  "flash",
+  "emotional-narrative": "flash",
+  "critic-agent":        "flash",
+  "visual-storyboard":   "flash",
+  "ai-prompt-director":  "flash",
+  "model-orchestrator":  "flash",
+  "stv-master":          "flash",
+  "honesty-auditor":     "flash",
+  "caeos-master":        "flash",
+  "nexus-master":        "flash",
+  "scene-breakdown":     "flash",
+  "sound-music":         "flash",
+  "acis-master":         "flash",
   "gpu-render-workers":  "flash",
   "timeline-assembly":   "flash",
   "post-production":     "flash",
@@ -113,8 +114,10 @@ async function runSmartAI(
 
   const [gemini, qwen] = await Promise.all([buildGemini(), buildQwen()]);
 
-  const geminiModel = tier === "pro" ? "gemini-2.5-pro" : "gemini-2.5-flash";
-  const qwenModel   = tier === "pro" ? "qwen-max"       : "qwen-plus";
+  // gemini-2.5-pro: 404 on free key. gemini-2.5-flash: only 20 RPD (exhausted fast).
+  // gemini-2.5-flash-lite: works on free tier with generous quota — primary model.
+  const geminiModel = "gemini-2.5-flash-lite";
+  const qwenModel   = tier === "pro" ? "qwen-max" : "qwen-plus";
 
   // Determine call order
   const useGemini = provider !== "qwen" && !!gemini;
@@ -123,14 +126,48 @@ async function runSmartAI(
   // Arabic + auto → try Qwen first for flash tasks (Qwen is stronger in Arabic)
   const qwenFirst = arabic && tier === "flash" && provider === "auto";
 
-  const tryGemini = async () => {
+  const tryGeminiWithModel = async (modelName: string) => {
     if (!gemini) throw new Error("GEMINI_API_KEY غير مُهيّأ");
-    const m = gemini.getGenerativeModel({ model: geminiModel, systemInstruction: systemPrompt });
+    const m = gemini.getGenerativeModel({ model: modelName, systemInstruction: systemPrompt });
     const contents = messages
-      .filter(m => m.role !== "system")
-      .map(m => ({ role: m.role as "user" | "model", parts: [{ text: m.content }] }));
-    const result = await m.generateContent({ contents, generationConfig: { maxOutputTokens: 8192 } });
-    return { text: result.response.text(), tokens: result.response.usageMetadata?.totalTokenCount ?? 0, model: geminiModel };
+      .filter(msg => msg.role !== "system")
+      .map(msg => ({ role: msg.role as "user" | "model", parts: [{ text: msg.content }] }));
+
+    // Retry up to 3 times for transient 503/429 errors
+    let lastErr: any;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const result = await m.generateContent({ contents, generationConfig: { maxOutputTokens: 8192 } });
+        return { text: result.response.text(), tokens: result.response.usageMetadata?.totalTokenCount ?? 0, model: modelName };
+      } catch (e: any) {
+        lastErr = e;
+        const isRetryable = e?.message?.includes("503") || e?.message?.includes("529") ||
+          (e?.message?.includes("429") && !e?.message?.includes("PerDay"));
+        if (isRetryable && attempt < 2) {
+          const delay = (attempt + 1) * 2000;
+          console.warn(`[AI] ${modelName} خطأ مؤقت (${attempt + 1}/3)، إعادة المحاولة بعد ${delay}ms`);
+          await new Promise(r => setTimeout(r, delay));
+        } else {
+          throw e;
+        }
+      }
+    }
+    throw lastErr;
+  };
+
+  const tryGemini = async () => {
+    return await tryGeminiWithModel(geminiModel);
+  };
+
+  // For pro tier: also try flash as a fallback before giving up on Gemini
+  const tryGeminiFlashFallback = async () => {
+    if (tier !== "pro" || geminiModel === "gemini-2.5-flash") return null;
+    try {
+      console.warn("[AI] تجربة gemini-2.5-flash كبديل");
+      return await tryGeminiWithModel("gemini-2.5-flash");
+    } catch (e: any) {
+      throw e;
+    }
   };
 
   const tryQwen = async () => {
@@ -144,13 +181,13 @@ async function runSmartAI(
   };
 
   // Build execution order
-  const order: Array<() => Promise<{ text: string; tokens: number; model: string }>> = [];
+  const order: Array<() => Promise<{ text: string; tokens: number; model: string } | null>> = [];
 
   if (qwenFirst) {
     if (useQwen)   order.push(tryQwen);
-    if (useGemini) order.push(tryGemini);
+    if (useGemini) { order.push(tryGemini); if (tier === "pro") order.push(tryGeminiFlashFallback); }
   } else {
-    if (useGemini) order.push(tryGemini);
+    if (useGemini) { order.push(tryGemini); if (tier === "pro") order.push(tryGeminiFlashFallback); }
     if (useQwen)   order.push(tryQwen);
   }
 
@@ -161,7 +198,8 @@ async function runSmartAI(
   let lastError: any;
   for (const fn of order) {
     try {
-      return await fn();
+      const res = await fn();
+      if (res !== null) return res;
     } catch (e: any) {
       lastError = e;
       console.warn(`[AI] فشل النموذج، التبديل للتالي: ${e?.message?.slice(0, 100)}`);
