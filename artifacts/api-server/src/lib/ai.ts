@@ -1,5 +1,35 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import OpenAI from "openai";
+import { db } from "@workspace/db";
+import { systemSettingsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+
+async function getDbKey(settingKey: string): Promise<string | null> {
+  try {
+    const rows = await db.select().from(systemSettingsTable).where(eq(systemSettingsTable.key, settingKey));
+    return rows[0]?.value || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getGeminiKey(): Promise<string | null> {
+  return process.env.GEMINI_API_KEY || await getDbKey("api_key.gemini");
+}
+
+export async function getAlibabaKey(): Promise<string | null> {
+  return process.env.ALIBABA_API_KEY || await getDbKey("api_key.alibaba");
+}
+
+export async function getGenAI(): Promise<GoogleGenerativeAI | null> {
+  const key = await getGeminiKey();
+  return key ? new GoogleGenerativeAI(key) : null;
+}
+
+export async function getQwenClient(): Promise<OpenAI | null> {
+  const key = await getAlibabaKey();
+  return key ? new OpenAI({ apiKey: key, baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1" }) : null;
+}
 
 const geminiApiKey = process.env.GEMINI_API_KEY;
 const alibabaApiKey = process.env.ALIBABA_API_KEY;
