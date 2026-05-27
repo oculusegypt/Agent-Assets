@@ -260,20 +260,21 @@ router.get("/ai-models", async (_req, res) => {
 });
 
 router.post("/ai-models/seed-quotas", async (_req, res) => {
-  // Update Alibaba base to DashScope (fix MaaS 404 issues)
-  await db.insert(systemSettingsTable)
-    .values({
-      key: "api_base.alibaba",
-      value: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      category: "api_keys",
-      description: "Alibaba DashScope endpoint (standard — supports all Qwen models)",
-    })
-    .onConflictDoUpdate({
-      target: systemSettingsTable.key,
-      set: { value: "https://dashscope.aliyuncs.com/compatible-mode/v1", updated_at: new Date() },
-    });
+  // Only insert default endpoint if no custom one is already configured
+  const existing = await db.select().from(systemSettingsTable)
+    .where(eq(systemSettingsTable.key, "api_base.alibaba"))
+    .limit(1);
+  if (existing.length === 0) {
+    await db.insert(systemSettingsTable)
+      .values({
+        key: "api_base.alibaba",
+        value: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        category: "api_keys",
+        description: "Alibaba endpoint (DashScope default — override via API Keys settings)",
+      });
+  }
 
-  res.json({ success: true, message: "تم تحديث endpoint إلى DashScope القياسي" });
+  res.json({ success: true, message: existing.length > 0 ? "الـ endpoint محفوظ كما هو (لا تعديل)" : "تم ضبط DashScope كـ endpoint افتراضي" });
 });
 
 router.get("/db-stats", async (_req, res) => {

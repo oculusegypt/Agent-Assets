@@ -1,17 +1,18 @@
 ---
 name: Alibaba Key vs DashScope
-description: المفتاح المخزَّن مفتاح MaaS لا يعمل مع DashScope — سبب fallback إلى Gemini.
+description: مفتاح Alibaba هو sk- مع endpoint MaaS مخصص — يعمل مع compatible-mode/v1 على نفس الدومين.
 ---
 
-## الموقف
-- `api_key.alibaba` في قاعدة البيانات = مفتاح بيئة MaaS خاص بـ endpoint مخصص.
-- endpoint المخصص: `ws-twcxat39x22mi7rg.ap-southeast-1.maas.aliyuncs.com` (يُعيد 404 للنماذج الجديدة).
-- DashScope القياسي: `https://dashscope.aliyuncs.com/compatible-mode/v1` (يُعيد 401 مع مفتاح MaaS).
-- كلا الحالتين → النظام يتراجع لـ Gemini → يعمل بشكل صحيح.
+## الموقف الصحيح (مُحدَّث)
+- `api_key.alibaba` = `sk-5197fd58bb1e45158b739f3166169310` — مفتاح sk- صالح لبيئة MaaS.
+- endpoint الصحيح: `https://ws-twcxat39x22mi7rg.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1`
+- هذا الـ endpoint يدعم OpenAI-compatible API بنفس تنسيق DashScope تماماً.
+- DashScope العام (`https://dashscope.aliyuncs.com/compatible-mode/v1`) يُعيد 401 لأن المفتاح مرتبط بالـ workspace المخصص.
 
-**Why:** الفرق بين نوعَي المفاتيح غير واضح في الواجهة؛ يجب التوثيق لتجنب التشخيص المتكرر.
+**Why:** بيئة MaaS تُعطي endpoint مخصصاً per-workspace يستخدم نفس صيغة `sk-` لكنه مقيَّد بالـ workspace.
 
 **How to apply:**
-- إذا رأيت `401 Incorrect API key` من Alibaba → المفتاح MaaS لا يعمل مع DashScope.
-- الحل: المستخدم يحتاج مفتاح `sk-xxxx` من [DashScope console](https://dashscope.console.aliyun.com).
-- `POST /api/settings/ai-models/seed-quotas` يُحدِّث الـ endpoint إلى DashScope القياسي.
+- لا تُبدِّل endpoint إلى DashScope العام إذا كان المستخدم يملك مفتاح MaaS workspace.
+- `seed-quotas` الآن آمن: لا يُعيد الكتابة إذا كان endpoint موجوداً في DB.
+- للتحقق: `GET /api/settings/api-keys` يُعيد `{"alibaba":{"configured":true,"source":"db"}}`.
+- اختبار الاتصال: `POST /api/settings/test-ai {"provider":"qwen"}` → يجب أن يُعيد `success: true`.
