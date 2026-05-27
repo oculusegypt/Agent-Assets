@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import {
   Activity, BrainCircuit, MonitorPlay, MessageSquare,
-  Film, Building2, Shield, Cpu, ChevronLeft, Settings2,
+  Film, Building2, Shield, Cpu, ChevronLeft, Settings2, Archive,
 } from "lucide-react";
 import { useGetSystemMetrics } from "@workspace/api-client-react";
 import { useUI } from "../contexts/ui-settings";
@@ -30,6 +30,7 @@ const NAV_SECTIONS = [
     labelEn: "COMMS",
     items: [
       { href: "/conversations", label: "تواصل الوكلاء", labelEn: "Agent Comms", icon: MessageSquare, sub: "محادثة مباشرة" },
+      { href: "/archive", label: "أرشيف النتائج", labelEn: "Results Archive", icon: Archive, sub: "مخرجات الذكاء الاصطناعي" },
     ],
   },
   {

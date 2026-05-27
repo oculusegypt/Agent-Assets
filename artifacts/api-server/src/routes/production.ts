@@ -334,6 +334,46 @@ router.post("/recover-stuck-jobs", async (_req, res) => {
   res.json({ recovered: staleJobs.length });
 });
 
+router.get("/archive", async (req, res) => {
+  const { phase, search, limit: limitRaw } = req.query as Record<string, string>;
+  const limitN = Math.min(parseInt(limitRaw || "100", 10), 500);
+
+  let jobs = await db.select({
+    id: generationJobsTable.id,
+    project_id: generationJobsTable.project_id,
+    phase: generationJobsTable.phase,
+    status: generationJobsTable.status,
+    model_used: generationJobsTable.model_used,
+    result: generationJobsTable.result,
+    started_at: generationJobsTable.started_at,
+    completed_at: generationJobsTable.completed_at,
+    estimated_seconds: generationJobsTable.estimated_seconds,
+  }).from(generationJobsTable)
+    .where(eq(generationJobsTable.status, "completed"))
+    .orderBy(desc(generationJobsTable.completed_at))
+    .limit(limitN);
+
+  if (phase) jobs = jobs.filter(j => j.phase === phase);
+  if (search) {
+    const q = search.toLowerCase();
+    jobs = jobs.filter(j => j.result?.toLowerCase().includes(q));
+  }
+
+  const projectIds = [...new Set(jobs.map(j => j.project_id))];
+  const projects = projectIds.length
+    ? await db.select({ id: projectsTable.id, title: projectsTable.title, titleAr: projectsTable.titleAr })
+        .from(projectsTable)
+    : [];
+  const projectMap = Object.fromEntries(projects.map(p => [p.id, p]));
+
+  res.json(jobs.map(j => ({
+    ...j,
+    project_title: projectMap[j.project_id]?.titleAr || projectMap[j.project_id]?.title || "مشروع محذوف",
+    started_at:  j.started_at?.toISOString()  || null,
+    completed_at: j.completed_at?.toISOString() || null,
+  })));
+});
+
 router.get("/models", (_req, res) => {
   const models = AI_MODELS.map(m => ({
     ...m,

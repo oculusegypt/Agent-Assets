@@ -12,6 +12,7 @@ import NexusPage from "./pages/nexus";
 import CaeosPage from "./pages/caeos";
 import ConversationsPage from "./pages/conversations";
 import SettingsPage from "./pages/settings";
+import ArchivePage from "./pages/archive";
 import NotFound from "@/pages/not-found";
 import { useRealtime } from "./hooks/use-realtime";
 
@@ -41,6 +42,7 @@ function Router() {
         <Route path="/nexus" component={NexusPage} />
         <Route path="/caeos" component={CaeosPage} />
         <Route path="/conversations" component={ConversationsPage} />
+        <Route path="/archive" component={ArchivePage} />
         <Route path="/settings" component={SettingsPage} />
         <Route component={NotFound} />
       </Switch>
