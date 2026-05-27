@@ -113,6 +113,95 @@ router.get("/:agentId/executions", async (req, res) => {
   })));
 });
 
+router.post("/pipeline-stream", async (req, res) => {
+  const { agent_ids, input, pipeline_name } = req.body;
+  if (!Array.isArray(agent_ids) || agent_ids.length === 0) {
+    return res.status(400).json({ error: "agent_ids مطلوب" });
+  }
+  if (!input) return res.status(400).json({ error: "input مطلوب" });
+
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+
+  const send = (data: object) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  const pipelineId = randomUUID();
+  const startTime = Date.now();
+  const allSteps: Array<{ agent_id: string; agent_name: string; result: string; tokens: number; model: string; duration_ms: number }> = [];
+  let totalTokens = 0;
+
+  send({ type: "pipeline_start", pipeline_id: pipelineId, agent_count: agent_ids.length, pipeline_name: pipeline_name || "خط أنابيب مخصص" });
+
+  try {
+    for (let i = 0; i < agent_ids.length; i++) {
+      const agentId = agent_ids[i];
+      const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId));
+      if (!agent) {
+        send({ type: "step_skip", index: i, agent_id: agentId, reason: "الوكيل غير موجود" });
+        continue;
+      }
+
+      send({ type: "step_start", index: i, agent_id: agentId, agent_name: agent.nameAr || agent.name, total: agent_ids.length });
+
+      const stepStart = Date.now();
+      const systemPrompt = getAgentSystemPrompt(agentId, agent.nameAr || agent.name);
+
+      const contextParts: string[] = [`الفكرة الأصلية:\n${input}`];
+      if (allSteps.length > 0) {
+        contextParts.push("\n\n=== السياق المتراكم من الوكلاء السابقين ===");
+        allSteps.forEach((s, idx) => {
+          contextParts.push(`\n--- الوكيل ${idx + 1}: ${s.agent_name} ---\n${s.result}`);
+        });
+        contextParts.push(`\n\n=== مهمتك (الوكيل ${i + 1} من ${agent_ids.length}) ===\nبناءً على كل ما سبق، قم بدورك التكاملي في هذا المشروع المشترك. مخرجاتك ستُمرَّر للوكيل التالي.`);
+      }
+
+      const aiRes = await callAI(systemPrompt, contextParts.join(""), i <= 1 ? "pro" : "flash");
+      const stepDuration = Date.now() - stepStart;
+      totalTokens += aiRes.tokens;
+
+      const step = { agent_id: agentId, agent_name: agent.nameAr || agent.name, result: aiRes.text, tokens: aiRes.tokens, model: aiRes.model, duration_ms: stepDuration };
+      allSteps.push(step);
+
+      await db.update(agentsTable).set({ executions_today: agent.executions_today + 1, last_active: new Date().toISOString(), status: "online" }).where(eq(agentsTable.id, agentId));
+
+      await db.insert(agentExecutionsTable).values({
+        id: randomUUID(), agent_id: agentId, action: `خط أنابيب: ${pipeline_name || "مخصص"} — المرحلة ${i + 1}`,
+        status: "completed", result: aiRes.text, duration_ms: stepDuration,
+        completed_at: new Date(), tokens_used: aiRes.tokens, model_used: aiRes.model,
+      });
+
+      send({ type: "step_complete", index: i, step, steps_done: allSteps.length, total: agent_ids.length });
+    }
+
+    const totalDuration = Date.now() - startTime;
+
+    await db.insert(activityTable).values({
+      id: randomUUID(), type: "agent_completed",
+      title: `خط أنابيب مكتمل: ${pipeline_name || "مخصص"}`,
+      description: `${allSteps.length} وكيل | ${totalTokens} رمز | ${Math.floor(totalDuration / 1000)}ث`,
+    });
+
+    send({
+      type: "pipeline_complete",
+      pipeline_id: pipelineId,
+      steps: allSteps,
+      final_output: allSteps[allSteps.length - 1]?.result || "",
+      total_tokens: totalTokens,
+      total_duration_ms: totalDuration,
+      agent_count: allSteps.length,
+    });
+  } catch (err: any) {
+    send({ type: "pipeline_error", error: err?.message || "فشل غير متوقع", steps: allSteps });
+  }
+
+  res.end();
+});
+
 router.post("/pipeline", async (req, res) => {
   const { agent_ids, input, pipeline_name } = req.body;
   if (!Array.isArray(agent_ids) || agent_ids.length === 0) {
