@@ -286,7 +286,7 @@ export default function SettingsPage() {
             </div>
             <div className="text-muted-foreground text-xs space-y-1.5">
               <p>• <span className="text-orange-300 font-medium">النص المعقد + الإبداعي</span> (بيليه، القصة، الإخراج، التنسيق): <span className="font-mono text-orange-400">qwen3-max-2026-01-23</span></p>
-              <p>• <span className="text-orange-300 font-medium">البرمجة وهندسة البرومبت</span>: <span className="font-mono text-orange-400">qwen3-coder-480b-a35b-instruct</span></p>
+              <p>• <span className="text-orange-300 font-medium">البرمجة وهندسة البرومبت</span>: <span className="font-mono text-orange-400">qwen3-coder-480b-a35b-instruct </span></p>
               <p>• <span className="text-orange-300 font-medium">التدقيق والاستدلال العميق</span> (مدقق الصدق، الناقد، CAEOS): <span className="font-mono text-orange-400">qwq-plus</span></p>
               <p>• <span className="text-orange-300 font-medium">الرؤية البصرية</span> (اللوحة المصورة): <span className="font-mono text-orange-400">qwen3-vl-235b-a22b-instruct</span></p>
               <p>• <span className="text-orange-300 font-medium">الترجمة</span>: <span className="font-mono text-orange-400">qwen-mt-plus</span> · <span className="text-muted-foreground font-medium">الصوت العربي حصرياً →</span> <span className="font-mono text-primary">gemini-2.5-flash-preview-tts</span></p>

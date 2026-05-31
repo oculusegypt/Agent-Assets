@@ -33,8 +33,8 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=8081 DB_PATH=$(pwd)/data/acis.db pnpm --filter @workspace/api-server run dev"
-waitForPort = 8081
+args = "PORT=3001 DB_PATH=$(pwd)/data/acis.db pnpm --filter @workspace/api-server run dev"
+waitForPort = 3001
 
 [[workflows.workflow]]
 name = "Start application"
@@ -55,6 +55,10 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[[ports]]
+localPort = 3001
+externalPort = 3001
 
 [[ports]]
 localPort = 8080
