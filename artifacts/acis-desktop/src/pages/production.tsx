@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { toast } from "sonner";
 import {
   useListProjects, useListModels, useCreateProject, useGenerateProduction,
 } from "@workspace/api-client-react";
@@ -517,24 +518,36 @@ export default function ProductionPage() {
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    const res = await createProject.mutateAsync({ data: form as any });
-    qc.invalidateQueries();
-    setTab("projects");
-    setSelectedProject(res?.id ?? null);
-    setForm({ title: "", story_prompt: "", language: "ar", type: "short", duration_seconds: 90 });
+    const tid = toast.loading("جارٍ إنشاء المشروع…");
+    try {
+      const res = await createProject.mutateAsync({ data: form as any });
+      qc.invalidateQueries();
+      setTab("projects");
+      setSelectedProject(res?.id ?? null);
+      setForm({ title: "", story_prompt: "", language: "ar", type: "short", duration_seconds: 90 });
+      toast.success(`تم إنشاء المشروع "${form.title}" ✓`, { id: tid });
+    } catch (err: any) {
+      toast.error(`فشل إنشاء المشروع: ${err?.message || "خطأ"}`, { id: tid });
+    }
   }
 
   async function handleGenerate(projectId: string, type: string) {
     setGenerating(true);
     setExpandedJobId(null);
+    const phaseNames: Record<string,string> = {
+      script:"السيناريو", storyboard:"اللوحة المصورة", audio:"الصوت",
+      images:"الصور", music:"الموسيقى", assembly:"التجميع النهائي"
+    };
+    const tid = toast.loading(`جارٍ توليد ${phaseNames[type] || type}…`);
     try {
       const res = await generateProd.mutateAsync({ projectId, data: { type } as any });
       if (res?.job_id) {
         setExpandedJobId(res.job_id);
         setTimeout(() => { refetchProjects(); refetchJobs(); qc.invalidateQueries(); }, 1500);
       }
+      toast.success(`بدأ توليد ${phaseNames[type] || type} ✓`, { id: tid });
     } catch (e: any) {
-      console.error(e);
+      toast.error(`فشل التوليد: ${e?.message || "خطأ"}`, { id: tid });
     }
     setGenerating(false);
   }

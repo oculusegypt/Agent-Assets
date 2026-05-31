@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -113,17 +114,28 @@ export default function NexusPage() {
 
   async function handleCreateTask(e: React.FormEvent) {
     e.preventDefault();
-    const res = await createTask.mutateAsync({ data: form as any });
-    qc.invalidateQueries();
-    setTab("tasks");
-    setViewTaskId((res as any)?.id ?? null);
-    setForm({ title: "", description: "", type: "document", priority: "medium" });
+    const tid = toast.loading("جارٍ إنشاء المهمة وتعيين الوكيل…");
+    try {
+      const res = await createTask.mutateAsync({ data: form as any });
+      qc.invalidateQueries();
+      setTab("tasks");
+      setViewTaskId((res as any)?.id ?? null);
+      setForm({ title: "", description: "", type: "document", priority: "medium" });
+      toast.success("تم إنشاء المهمة بنجاح ✓", { id: tid });
+    } catch (err: any) {
+      toast.error(`فشل إنشاء المهمة: ${err?.message || "خطأ غير معروف"}`, { id: tid });
+    }
   }
 
   async function handleDelete(taskId: string, e: React.MouseEvent) {
     e.stopPropagation();
-    await deleteTask.mutateAsync({ taskId });
-    qc.invalidateQueries();
+    try {
+      await deleteTask.mutateAsync({ taskId });
+      qc.invalidateQueries();
+      toast.success("حُذفت المهمة");
+    } catch {
+      toast.error("فشل حذف المهمة");
+    }
   }
 
   function applyTemplate(tpl: any) {

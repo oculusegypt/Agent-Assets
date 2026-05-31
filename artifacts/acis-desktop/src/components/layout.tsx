@@ -128,6 +128,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   style={{ width: `${healthScore}%` }}
                 />
               </div>
+              <button
+                onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }))}
+                className="w-full flex items-center justify-between text-[10px] font-mono text-muted-foreground/50 hover:text-muted-foreground border border-border/30 hover:border-border/60 rounded px-2 py-1 transition-colors group"
+                title="⌘K — بحث عالمي">
+                <span className="group-hover:text-foreground/60 transition-colors">بحث عالمي</span>
+                <kbd className="bg-secondary border border-border/40 px-1 py-0.5 rounded text-[9px]">⌘K</kbd>
+              </button>
               <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground justify-end">
                 <span className="opacity-40">v2.0</span>
                 <span className="ml-auto">النظام سليم</span>

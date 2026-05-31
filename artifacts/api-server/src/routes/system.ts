@@ -283,4 +283,60 @@ router.post("/seed-agents", async (_req, res) => {
   res.json({ success: true, seeded, updated, total: AGENT_CATALOG.length });
 });
 
+// ─── Global Search ────────────────────────────────────────────────────────────
+router.get("/search", async (req, res) => {
+  const q = String(req.query.q || "").trim();
+  if (!q) return res.json({ results: [] });
+
+  const term = `%${q}%`;
+
+  try {
+    const { db: rawDb } = await import("@workspace/db") as any;
+    const conn = (rawDb as any)._driver ?? (rawDb as any).session?.();
+
+    // Use drizzle raw-like approach: use the underlying node:sqlite
+    const sqlite = (rawDb as any)._db ?? null;
+
+    const run = (sql: string, params: string[]) => {
+      try {
+        if (sqlite && typeof sqlite.prepare === "function") {
+          return sqlite.prepare(sql).all(...params) as any[];
+        }
+      } catch {}
+      return [];
+    };
+
+    const agents = run(
+      `SELECT id, name, name_ar as nameAr, system, status, 'agent' as type FROM agents WHERE name LIKE ? OR name_ar LIKE ? OR system LIKE ? LIMIT 8`,
+      [term, term, term]
+    );
+
+    const convs = run(
+      `SELECT id, title, agent_name as agentName, 'conversation' as type FROM conversations WHERE title LIKE ? OR agent_name LIKE ? ORDER BY updated_at DESC LIMIT 6`,
+      [term, term]
+    );
+
+    const nexus = run(
+      `SELECT id, title, status, type, 'nexus_task' as kind FROM nexus_tasks WHERE title LIKE ? OR description LIKE ? ORDER BY created_at DESC LIMIT 6`,
+      [term, term]
+    );
+
+    const projects = run(
+      `SELECT id, title, type, status, 'project' as kind FROM projects WHERE title LIKE ? OR story_prompt LIKE ? ORDER BY created_at DESC LIMIT 6`,
+      [term, term]
+    );
+
+    const results = [
+      ...agents.map((r: any) => ({ ...r, kind: "agent", label: r.nameAr || r.name, href: "/conversations" })),
+      ...convs.map((r: any) => ({ ...r, kind: "conversation", label: r.title || r.agentName, href: "/conversations" })),
+      ...nexus.map((r: any) => ({ ...r, kind: "nexus_task", label: r.title, href: "/nexus" })),
+      ...projects.map((r: any) => ({ ...r, kind: "project", label: r.title, href: "/production" })),
+    ];
+
+    res.json({ results, query: q, total: results.length });
+  } catch (err: any) {
+    res.json({ results: [], error: err?.message });
+  }
+});
+
 export default router;

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -121,13 +122,18 @@ export default function ConversationsPage() {
   async function handleNewConversation() {
     if (!newAgentId) return;
     const agent = agents?.find(a => a.id === newAgentId);
-    const res = await createConv.mutateAsync({
-      data: { agent_id: newAgentId, agent_name: agent?.nameAr || agent?.name || newAgentId },
-    });
-    qc.invalidateQueries();
-    setSelectedConv(res?.id ?? null);
-    setShowNew(false);
-    setNewAgentId("");
+    try {
+      const res = await createConv.mutateAsync({
+        data: { agent_id: newAgentId, agent_name: agent?.nameAr || agent?.name || newAgentId },
+      });
+      qc.invalidateQueries();
+      setSelectedConv(res?.id ?? null);
+      setShowNew(false);
+      setNewAgentId("");
+      toast.success(`بدأت محادثة مع ${agent?.nameAr || agent?.name || newAgentId}`);
+    } catch {
+      toast.error("فشل إنشاء المحادثة");
+    }
   }
 
   return (
@@ -190,7 +196,11 @@ export default function ConversationsPage() {
                   onClick={(e) => {
                     e.stopPropagation();
                     setDeletingId(conv.id);
-                    deleteConv.mutate(conv.id, { onSettled: () => setDeletingId(null) });
+                    deleteConv.mutate(conv.id, {
+                      onSuccess: () => toast.success("حُذفت المحادثة"),
+                      onError: () => toast.error("فشل حذف المحادثة"),
+                      onSettled: () => setDeletingId(null),
+                    });
                   }}
                   disabled={isDeleting}
                   className="absolute left-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-red-500/10 hover:text-red-400 text-muted-foreground/50">

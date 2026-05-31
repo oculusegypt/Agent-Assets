@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useListAgents, useGetBillieAlerts, useGetSystemMetrics, useExecuteAgent } from "@workspace/api-client-react";
@@ -73,6 +74,7 @@ export default function CaeosPage() {
     if (!ethicsInput.trim()) return;
     setEthicsRunning(true);
     setEthicsResult(null);
+    const tid = toast.loading("CAEOS يُحلّل عبر 15 طبقة سيادية…");
     try {
       const res = await executeAgent.mutateAsync({
         agentId: "caeos-master",
@@ -93,9 +95,11 @@ ${ethicsInput}
       setEthicsResult(res?.result ?? "اكتمل التحليل.");
       setShowEthicsModal(true);
       qc.invalidateQueries();
+      toast.success("اكتمل التحليل الأخلاقي ✓", { id: tid });
     } catch (e: any) {
       setEthicsResult(`خطأ: ${e?.message}`);
       setShowEthicsModal(true);
+      toast.error("فشل التحليل الأخلاقي", { id: tid });
     }
     setEthicsRunning(false);
   }

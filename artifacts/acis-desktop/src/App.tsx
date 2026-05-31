@@ -1,9 +1,11 @@
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UIProvider } from "./contexts/ui-settings";
 import { Layout } from "./components/layout";
+import { CommandPalette } from "./components/command-palette";
 import Dashboard from "./pages/dashboard";
 import BilliePage from "./pages/billie";
 import AcisPage from "./pages/acis";
@@ -61,6 +63,8 @@ function App() {
             </RealtimeProvider>
           </WouterRouter>
           <Toaster />
+          <SonnerToaster position="bottom-left" richColors dir="rtl" />
+          <CommandPalette />
         </UIProvider>
       </TooltipProvider>
     </QueryClientProvider>

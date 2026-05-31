@@ -79,22 +79,32 @@ export default function SettingsPage() {
   const { data: agents, refetch: refetchAgents } = useListAgents();
   const qc = useQueryClient();
 
+  async function safeJson(r: Response) {
+    try { const t = await r.text(); return t ? JSON.parse(t) : null; } catch { return null; }
+  }
+
   const load = useCallback(async () => {
-    const r = await fetch(`${BASE}/api/settings`);
-    const d = await r.json();
-    setSettings(d.settings || []);
+    try {
+      const r = await fetch(`${BASE}/api/settings`);
+      const d = await safeJson(r);
+      if (d) setSettings(d.settings || []);
+    } catch {}
   }, []);
 
   const loadDb = useCallback(async () => {
-    const r = await fetch(`${BASE}/api/settings/db-stats`);
-    const d = await r.json();
-    setDbStats(d);
+    try {
+      const r = await fetch(`${BASE}/api/settings/db-stats`);
+      const d = await safeJson(r);
+      if (d) setDbStats(d);
+    } catch {}
   }, []);
 
   const loadKeyStatus = useCallback(async () => {
-    const r = await fetch(`${BASE}/api/settings/api-keys`);
-    const d = await r.json();
-    setKeyStatus(d);
+    try {
+      const r = await fetch(`${BASE}/api/settings/api-keys`);
+      const d = await safeJson(r);
+      if (d) setKeyStatus(d);
+    } catch {}
   }, []);
 
   const loadModels = useCallback(async () => {
