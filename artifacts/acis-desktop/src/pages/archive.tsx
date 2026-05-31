@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useListProjects } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -296,7 +298,11 @@ function FullResultModal({ job, onClose }: { job: any; onClose: () => void }) {
           {job.output_url && <MediaOutput outputUrl={job.output_url} meta={meta} />}
           {rawView
             ? <pre className="text-xs leading-loose whitespace-pre-wrap text-foreground/75 font-mono text-right" dir="rtl">{job.result}</pre>
-            : <RichContent text={job.result || ""} phase={job.phase} />}
+            : (
+              <div className="prose prose-invert prose-sm max-w-none text-right prose-p:leading-loose prose-headings:text-foreground prose-strong:text-foreground prose-code:text-primary prose-code:bg-secondary prose-code:px-1 prose-code:rounded prose-pre:bg-secondary prose-pre:text-xs prose-li:marker:text-primary prose-table:text-xs" dir="rtl">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{job.result || ""}</ReactMarkdown>
+              </div>
+            )}
         </div>
       </div>
     </div>

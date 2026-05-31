@@ -838,8 +838,29 @@ export default function ProductionPage() {
       )}
 
       {tab === "new" && (
-        <div className="max-w-2xl mx-auto">
-          <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-4">إنشاء مشروع إنتاج جديد</div>
+        <div className="max-w-2xl mx-auto space-y-6">
+          <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest">قوالب إنتاج سريع</div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {[
+              { label: "فيلم قصير عربي",     icon: "🎬", type: "short",       lang: "ar",        dur: 90,   story: "رحلة شخصية تحول حياة بطل عربي من اليأس إلى الأمل في مدينة عربية حديثة، مع تصوير عاطفي ومؤثرات بصرية راقية." },
+              { label: "وثائقي طبيعة",        icon: "🌿", type: "documentary", lang: "ar",        dur: 180,  story: "رحلة استكشافية في أعماق الطبيعة العربية — الصحراء، الجبال، والبحار — مع تعليق صوتي شعري وموسيقى هادئة." },
+              { label: "إعلان تجاري",          icon: "📢", type: "commercial",  lang: "bilingual", dur: 30,   story: "إعلان احترافي يجمع بين القيم العربية والحداثة لمنتج تقني يُغيّر الحياة اليومية، مع موسيقى ديناميكية." },
+              { label: "Short Film (EN)",      icon: "🎥", type: "short",       lang: "en",        dur: 120,  story: "A cinematic story about a young innovator who discovers an ancient secret that challenges modern society, blending mystery with personal drama." },
+              { label: "فيلم خيال علمي",      icon: "🚀", type: "medium",      lang: "ar",        dur: 300,  story: "في عام 2150، روبوت يكتشف أنه يمتلك مشاعر بشرية ويبدأ رحلة البحث عن هويته في عالم يسيطر عليه الذكاء الاصطناعي." },
+              { label: "كليب موسيقي",          icon: "🎵", type: "short",       lang: "ar",        dur: 210,  story: "تصور بصري شعري لأغنية عربية حديثة تجمع بين التراث الموسيقي والإيقاعات المعاصرة، مع مشاهد من أرجاء الوطن العربي." },
+            ].map(tpl => (
+              <button
+                key={tpl.label}
+                type="button"
+                onClick={() => setForm(f => ({ ...f, title: tpl.label, story_prompt: tpl.story, type: tpl.type, language: tpl.lang, duration_seconds: tpl.dur }))}
+                className="p-3 rounded border border-border/50 bg-card hover:border-purple-400/50 hover:bg-purple-500/5 text-right transition-all group">
+                <div className="text-2xl mb-1.5">{tpl.icon}</div>
+                <div className="text-xs font-bold text-foreground group-hover:text-purple-300 transition-colors">{tpl.label}</div>
+                <div className="text-[10px] font-mono text-muted-foreground mt-0.5">{tpl.dur}ث · {tpl.lang}</div>
+              </button>
+            ))}
+          </div>
+          <div className="text-xs font-mono text-muted-foreground uppercase tracking-widest">إنشاء مشروع إنتاج جديد</div>
           <form onSubmit={handleCreate} className="p-6 bg-card border border-border/50 rounded space-y-4">
             <div className="space-y-1">
               <label className="text-xs font-mono text-muted-foreground uppercase tracking-widest block text-right">عنوان المشروع</label>

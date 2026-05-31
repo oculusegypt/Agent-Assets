@@ -8,6 +8,9 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useQueryClient } from "@tanstack/react-query";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
+} from "recharts";
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
@@ -53,6 +56,8 @@ export default function Dashboard() {
 
   const [modelStats, setModelStats] = useState<ModelStats | null>(null);
   const [modelLoading, setModelLoading] = useState(false);
+  const [analytics, setAnalytics] = useState<any[]>([]);
+  const [quotas, setQuotas] = useState<any[]>([]);
 
   const loadModelStats = useCallback(async () => {
     setModelLoading(true);
@@ -63,8 +68,22 @@ export default function Dashboard() {
     setModelLoading(false);
   }, []);
 
+  const loadAnalytics = useCallback(async () => {
+    try {
+      const [r1, r2] = await Promise.all([
+        fetch(`${BASE}/api/system/analytics`),
+        fetch(`${BASE}/api/system/token-quotas`),
+      ]);
+      const a = await r1.json();
+      const q = await r2.json();
+      setAnalytics(a.daily || []);
+      setQuotas(q.filter((m: any) => m.used > 0).slice(0, 5));
+    } catch {}
+  }, []);
+
   useEffect(() => {
     loadModelStats();
+    loadAnalytics();
     const interval = setInterval(() => {
       refetchMetrics();
       refetchAgents();
@@ -72,7 +91,7 @@ export default function Dashboard() {
       loadModelStats();
     }, 15000);
     return () => clearInterval(interval);
-  }, [refetchMetrics, refetchAgents, refetchActivity, loadModelStats]);
+  }, [refetchMetrics, refetchAgents, refetchActivity, loadModelStats, loadAnalytics]);
 
   const health = metrics?.system_health ?? 0;
   const healthColor = health >= 90 ? "text-emerald-400" : health >= 70 ? "text-amber-400" : "text-red-400";
@@ -144,6 +163,67 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* ── Analytics Charts ── */}
+      {analytics.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 rounded border border-border/50 bg-card overflow-hidden">
+            <div className="px-4 py-3 border-b border-border/50 bg-secondary/20 flex items-center justify-between">
+              <span className="text-xs font-mono text-muted-foreground">آخر 7 أيام</span>
+              <div className="flex items-center gap-2">
+                <TrendingUp size={14} className="text-primary" />
+                <span className="font-semibold text-sm">التنفيذات اليومية</span>
+              </div>
+            </div>
+            <div className="p-3" style={{ height: "180px" }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={analytics} margin={{ top: 4, right: 4, bottom: 0, left: -24 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                  <XAxis dataKey="day" tick={{ fontSize: 9, fill: "#666" }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 9, fill: "#666" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={{ background: "#111", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "6px", fontSize: "11px" }}
+                    labelStyle={{ color: "#aaa" }}
+                    formatter={(val: any, name: string) => [val, name === "qwen" ? "Qwen" : "Gemini"]}
+                  />
+                  <Bar dataKey="qwen"   stackId="a" fill="#f97316" name="Qwen"   radius={[0,0,0,0]} maxBarSize={40} />
+                  <Bar dataKey="gemini" stackId="a" fill="hsl(var(--primary))" name="Gemini" radius={[3,3,0,0]} maxBarSize={40} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="rounded border border-border/50 bg-card overflow-hidden">
+            <div className="px-4 py-3 border-b border-border/50 bg-secondary/20 flex items-center justify-between">
+              <Cpu size={13} className="text-muted-foreground" />
+              <span className="font-semibold text-sm">استهلاك الرموز</span>
+            </div>
+            <div className="p-3 space-y-2">
+              {quotas.length === 0 ? (
+                <div className="text-center text-muted-foreground text-xs py-6">لا توجد بيانات بعد</div>
+              ) : quotas.map((q: any) => (
+                <div key={q.model} className="space-y-0.5">
+                  <div className="flex items-center justify-between text-[10px] font-mono">
+                    <span className={q.percent > 80 ? "text-red-400 font-bold" : q.percent > 50 ? "text-amber-400" : "text-emerald-400"}>{q.percent}%</span>
+                    <span className="text-muted-foreground truncate max-w-[130px]">{q.model.split("-").slice(0,3).join("-")}</span>
+                  </div>
+                  <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${q.percent > 80 ? "bg-red-500" : q.percent > 50 ? "bg-amber-500" : "bg-emerald-500"}`}
+                      style={{ width: `${q.percent}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+              {quotas.length > 0 && (
+                <div className="text-[9px] font-mono text-muted-foreground/50 text-right pt-1">
+                  حصة الطلبات اليومية المجانية
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── AI Model Usage Dashboard ── */}
       <div className="rounded border border-border/50 bg-card overflow-hidden">

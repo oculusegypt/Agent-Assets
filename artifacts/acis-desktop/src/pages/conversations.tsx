@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   useListConversations, useListMessages, useListAgents,
   useSendMessage, useCreateConversation,
@@ -41,6 +43,7 @@ export default function ConversationsPage() {
   const [selectedConv, setSelectedConv] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [newAgentId, setNewAgentId] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -76,13 +79,42 @@ export default function ConversationsPage() {
     setSending(true);
     const userInput = input;
     setInput("");
+    setStreamingText("");
     try {
-      await sendMsg.mutateAsync({
-        conversationId: selectedConv,
-        data: { content: userInput, language: isArabic(userInput) ? "ar" : "en" },
+      const response = await fetch(`${API_BASE}/conversations/${selectedConv}/messages-stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: userInput }),
       });
-      qc.invalidateQueries();
-    } catch {}
+      if (!response.ok || !response.body) throw new Error("فشل الاتصال");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const ev = JSON.parse(line.slice(6));
+            if (ev.type === "chunk") setStreamingText(ev.text);
+            if (ev.type === "done") { setStreamingText(""); qc.invalidateQueries(); }
+          } catch {}
+        }
+      }
+    } catch {
+      try {
+        await sendMsg.mutateAsync({
+          conversationId: selectedConv,
+          data: { content: userInput, language: isArabic(userInput) ? "ar" : "en" },
+        });
+        qc.invalidateQueries();
+      } catch {}
+    }
+    setStreamingText("");
     setSending(false);
   }
 
@@ -225,12 +257,16 @@ export default function ConversationsPage() {
                       {msg.role === "user" ? <User size={12} /> : <BrainCircuit size={12} />}
                     </div>
                     <div className={`max-w-[75%] space-y-1 ${msg.role === "user" ? "items-start" : "items-end"} flex flex-col`}>
-                      <div className={`p-3 rounded text-sm whitespace-pre-wrap ${
+                      <div className={`p-3 rounded text-sm ${
                         msg.role === "user"
-                          ? "bg-secondary border border-border/50 text-foreground"
-                          : "bg-primary/10 border border-primary/20 text-foreground"
+                          ? "bg-secondary border border-border/50 text-foreground whitespace-pre-wrap"
+                          : "bg-primary/10 border border-primary/20 text-foreground prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-pre:bg-secondary prose-pre:text-xs prose-code:text-primary prose-code:bg-secondary prose-code:px-1 prose-code:rounded prose-headings:text-foreground prose-strong:text-foreground"
                       }`} dir={arabic ? "rtl" : "ltr"}>
-                        {msg.content}
+                        {msg.role === "assistant" ? (
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                        ) : (
+                          msg.content
+                        )}
                       </div>
                       <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground">
                         <Clock size={8} />
@@ -242,7 +278,18 @@ export default function ConversationsPage() {
                   </div>
                 );
               })}
-              {sending && (
+              {sending && streamingText && (
+                <div className="flex gap-3 flex-row-reverse">
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center bg-primary/20 border border-primary/30 text-primary shrink-0">
+                    <BrainCircuit size={12} />
+                  </div>
+                  <div className="max-w-[75%] p-3 rounded bg-primary/10 border border-primary/20 text-sm prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-pre:bg-secondary prose-pre:text-xs prose-code:text-primary" dir="rtl">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingText}</ReactMarkdown>
+                    <span className="text-primary animate-pulse">▊</span>
+                  </div>
+                </div>
+              )}
+              {sending && !streamingText && (
                 <div className="flex gap-3 flex-row-reverse">
                   <div className="w-7 h-7 rounded-full flex items-center justify-center bg-primary/20 border border-primary/30 text-primary shrink-0">
                     <BrainCircuit size={12} />

@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { conversationsTable, messagesTable, agentsTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { callAIForTask, callAIWithHistory, getAgentSystemPrompt, getAgentTaskType } from "../lib/ai.js";
+import { callAIForTask, callAIForTaskStream, callAIWithHistory, getAgentSystemPrompt, getAgentTaskType } from "../lib/ai.js";
 import { broadcast } from "../lib/ws.js";
 
 const router = Router();
@@ -115,6 +115,70 @@ router.post("/:conversationId/messages", async (req, res) => {
     }).returning();
     res.json({ ...response, created_at: response.created_at?.toISOString() || new Date().toISOString() });
   }
+});
+
+router.post("/:conversationId/messages-stream", async (req, res) => {
+  const { conversationId } = req.params;
+  const { content } = req.body;
+  if (!content) { res.status(400).json({ error: "المحتوى مطلوب" }); return; }
+
+  const [conv] = await db.select().from(conversationsTable).where(eq(conversationsTable.id, conversationId));
+  if (!conv) { res.status(404).json({ error: "المحادثة غير موجودة" }); return; }
+
+  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, conv.agent_id));
+
+  await db.insert(messagesTable).values({
+    id: randomUUID(), conversation_id: conversationId, role: "user", content,
+  });
+
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+
+  const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+  const history = await db.select().from(messagesTable)
+    .where(eq(messagesTable.conversation_id, conversationId))
+    .orderBy(messagesTable.created_at).limit(20);
+
+  const historyForAI = history
+    .filter(m => m.role === "user" || m.role === "assistant")
+    .slice(0, -1)
+    .map(m => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+  const systemPrompt = getAgentSystemPrompt(conv.agent_id, agent?.nameAr || conv.agent_name);
+  const taskType = getAgentTaskType(conv.agent_id);
+
+  try {
+    let fullText = "";
+    const { model } = await callAIForTaskStream(taskType, systemPrompt, content, { history: historyForAI }, (text) => {
+      fullText = text;
+      send({ type: "chunk", text });
+    });
+
+    const [response] = await db.insert(messagesTable).values({
+      id: randomUUID(), conversation_id: conversationId, role: "assistant",
+      content: fullText, model_used: model, tokens_used: 0,
+    }).returning();
+
+    await db.update(conversationsTable).set({
+      message_count: conv.message_count + 2, last_message_at: new Date(),
+    }).where(eq(conversationsTable.id, conversationId));
+
+    broadcast("conversation_updated", { conversationId });
+    send({ type: "done", message: { ...response, created_at: response.created_at?.toISOString() || new Date().toISOString() } });
+  } catch (err: any) {
+    console.error("[محادثة تدفقية] خطأ:", err?.message);
+    const fallback = "عذراً، جميع نماذج الذكاء الاصطناعي غير متاحة حالياً.";
+    await db.insert(messagesTable).values({
+      id: randomUUID(), conversation_id: conversationId, role: "assistant",
+      content: fallback, model_used: "خطأ", tokens_used: 0,
+    });
+    send({ type: "error", message: err?.message || "فشل الاتصال" });
+  }
+  res.end();
 });
 
 router.delete("/:conversationId", async (req, res) => {

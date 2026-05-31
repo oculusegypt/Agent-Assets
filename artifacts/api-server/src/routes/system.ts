@@ -4,7 +4,7 @@ import { agentsTable, agentExecutionsTable, projectsTable, activityTable, system
 import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { broadcast } from "../lib/ws.js";
-import { callAIForTask } from "../lib/ai.js";
+import { callAIForTask, MODEL_INITIAL_QUOTAS } from "../lib/ai.js";
 
 const SERVER_START = Date.now();
 
@@ -169,6 +169,57 @@ router.post("/health-check", async (_req, res) => {
     alert_ids: newAlerts,
     checked_at: new Date().toISOString(),
   });
+});
+
+/* ── Analytics: last 7 days daily executions ── */
+router.get("/analytics", async (_req, res) => {
+  const execs = await db.select().from(agentExecutionsTable)
+    .orderBy(desc(agentExecutionsTable.created_at))
+    .limit(2000);
+
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    d.setHours(0, 0, 0, 0);
+    const next = new Date(d);
+    next.setDate(next.getDate() + 1);
+    const dayExecs = execs.filter(e => e.created_at && e.created_at >= d && e.created_at < next);
+    days.push({
+      day: d.toLocaleDateString("ar-SA", { weekday: "short", day: "numeric" }),
+      date: d.toISOString().split("T")[0],
+      count: dayExecs.length,
+      tokens: dayExecs.reduce((s, e) => s + (e.tokens_used || 0), 0),
+      gemini: dayExecs.filter(e => e.model_used?.startsWith("gemini")).length,
+      qwen:   dayExecs.filter(e => e.model_used?.startsWith("qwen")).length,
+      success: dayExecs.filter(e => e.status === "completed").length,
+      failed:  dayExecs.filter(e => e.status === "failed").length,
+    });
+  }
+
+  res.json({ daily: days });
+});
+
+/* ── Token quotas: usage vs quota per model ── */
+router.get("/token-quotas", async (_req, res) => {
+  const execs = await db.select().from(agentExecutionsTable);
+  const usage: Record<string, number> = {};
+  for (const e of execs) {
+    if (e.model_used) {
+      usage[e.model_used] = (usage[e.model_used] || 0) + (e.tokens_used || 0);
+    }
+  }
+
+  const quotas = MODEL_INITIAL_QUOTAS as Record<string, number>;
+  const result = Object.entries(quotas).map(([model, quota]) => ({
+    model,
+    quota,
+    used: usage[model] || 0,
+    remaining: Math.max(0, quota - (usage[model] || 0)),
+    percent: quota > 0 ? Math.min(100, Math.round(((usage[model] || 0) / quota) * 100)) : 0,
+  })).sort((a, b) => b.used - a.used);
+
+  res.json(result);
 });
 
 /* ── Seed all 19 agents to DB ── */

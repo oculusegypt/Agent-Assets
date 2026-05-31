@@ -147,7 +147,7 @@ router.post("/projects/:projectId/generate", async (req, res) => {
   await db.update(projectsTable).set({
     status: statusMap[safePhase] || "generating",
     phase: phaseIndex,
-    assets_generated: project.assets_generated + Math.floor(Math.random() * 8) + 2,
+    assets_generated: project.assets_generated + 1,
     updated_at: new Date(),
   }).where(eq(projectsTable.id, projectId));
 

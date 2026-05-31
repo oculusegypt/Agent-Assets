@@ -3,3 +3,4 @@
 - [Alibaba Key vs DashScope](alibaba-key.md) — المفتاح المخزَّن في DB هو مفتاح MaaS لا يعمل مع DashScope القياسي (401).
 - [SQLite via node:sqlite](sqlite-setup.md) — better-sqlite3 لا يُبنى في Replit؛ الحل: node:sqlite (مدمج Node 24) + drizzle sqlite-proxy.
 - [ACIS API patterns](acis-api-patterns.md) — DELETE endpoints for conversations/projects added; recover-stuck-jobs runs on startup; conversations now use callAIForTask+getAgentTaskType instead of legacy callAI.
+- [ACIS Major Improvements](acis-improvements.md) — SSE streaming added (conversations + billie), analytics+token-quotas endpoints added, react-markdown installed, Recharts charts in dashboard, 6 production templates, assets_generated fixed.

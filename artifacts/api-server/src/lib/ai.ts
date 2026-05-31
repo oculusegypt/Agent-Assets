@@ -353,6 +353,54 @@ async function runTaskAI(
 
 /* ─── Public API ──────────────────────────────────────────────── */
 
+/** Stream AI for a task type — calls onChunk with each text delta, returns totals */
+export async function callAIForTaskStream(
+  taskType: TaskType,
+  systemPrompt: string,
+  userMessage: string,
+  opts: { history?: Array<{ role: "user" | "assistant"; content: string }>; maxTokens?: number },
+  onChunk: (textSoFar: string) => void
+): Promise<{ totalTokens: number; model: string }> {
+  const cfg = TASK_MODEL_CONFIG[taskType];
+  const history = opts.history ?? [];
+  const msgs: any[] = [
+    { role: "system", content: systemPrompt },
+    ...history.map(h => ({ role: h.role === "assistant" ? "assistant" : "user", content: h.content })),
+    { role: "user", content: userMessage },
+  ];
+
+  const qwen = await buildQwen();
+  if (qwen) {
+    for (const model of [cfg.primary, cfg.fallback]) {
+      try {
+        const stream = await (qwen.chat.completions as any).create({
+          model,
+          messages: msgs,
+          max_tokens: opts.maxTokens ?? 8192,
+          stream: true,
+        });
+        let fullText = "";
+        for await (const chunk of stream as any) {
+          const delta: string = chunk.choices?.[0]?.delta?.content || "";
+          if (delta) {
+            fullText += delta;
+            onChunk(fullText);
+          }
+        }
+        console.log(`[AI Stream] ✓ ${model}`);
+        return { totalTokens: 0, model };
+      } catch (e: any) {
+        console.warn(`[AI Stream] ${model} فشل: ${e?.message?.slice(0, 80)}`);
+      }
+    }
+  }
+
+  // Fallback: non-streaming
+  const result = await callAIForTask(taskType, systemPrompt, userMessage, opts);
+  onChunk(result.text);
+  return { totalTokens: result.tokens, model: result.model };
+}
+
 /** Call AI for a specific task type (recommended for all new code) */
 export async function callAIForTask(
   taskType: TaskType,
