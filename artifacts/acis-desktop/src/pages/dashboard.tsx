@@ -364,6 +364,42 @@ export default function Dashboard() {
         </div>
 
         <div className="space-y-4">
+          {/* Agent Leaderboard */}
+          {!agentsLoading && agents && agents.filter(a => (a.executions_today ?? 0) > 0).length > 0 && (
+            <div className="bg-card border border-border/50 rounded overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-border/50 bg-secondary/20 flex items-center justify-between">
+                <TrendingUp size={13} className="text-amber-400" />
+                <span className="font-semibold text-sm">لوحة قادة الوكلاء</span>
+              </div>
+              <div className="p-2 space-y-1">
+                {[...agents]
+                  .sort((a, b) => (b.executions_today ?? 0) - (a.executions_today ?? 0))
+                  .slice(0, 5)
+                  .map((agent, idx) => {
+                    const maxExec = [...agents].sort((a,b) => (b.executions_today??0)-(a.executions_today??0))[0]?.executions_today ?? 1;
+                    const pct = Math.round(((agent.executions_today ?? 0) / Math.max(maxExec, 1)) * 100);
+                    const medals = ["🥇","🥈","🥉","4","5"];
+                    const barColors = ["bg-amber-400","bg-slate-400","bg-amber-700/80","bg-primary/60","bg-primary/40"];
+                    return (
+                      <div key={agent.id} className="flex items-center gap-2 p-1.5 rounded hover:bg-secondary/40 transition-colors">
+                        <span className="text-xs shrink-0">{medals[idx]}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-[10px] font-mono text-primary font-bold">{agent.executions_today}</span>
+                            <span className="text-xs truncate max-w-[120px] font-medium text-right">{agent.nameAr || agent.name}</span>
+                          </div>
+                          <div className="h-1 bg-secondary rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${barColors[idx]}`} style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                }
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <span className="text-xs font-mono text-muted-foreground/60 animate-pulse">تحديث كل 15ث</span>
             <h2 className="text-lg font-semibold uppercase tracking-wider text-muted-foreground">النشاط الحي</h2>

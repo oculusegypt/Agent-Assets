@@ -231,6 +231,20 @@ export default function ConversationsPage() {
                 <div className="text-xs font-mono text-muted-foreground">{selectedConvData.message_count} رسالة</div>
                 <button
                   onClick={() => {
+                    if (!messages?.length) return;
+                    const agentName = selectedAgent?.nameAr || selectedConvData.agent_name;
+                    const md = `# محادثة مع ${agentName}\n\n` +
+                      messages.map(m =>
+                        `**${m.role === "user" ? "المستخدم" : agentName}** — ${new Date(m.created_at).toLocaleString("ar-SA")}\n\n${m.content}\n\n---`
+                      ).join("\n\n");
+                    navigator.clipboard?.writeText(md);
+                  }}
+                  title="تصدير المحادثة كـ Markdown"
+                  className="p-1.5 rounded hover:bg-emerald-500/10 hover:text-emerald-400 text-muted-foreground/40 transition-colors">
+                  <Zap size={13} />
+                </button>
+                <button
+                  onClick={() => {
                     if (confirm("حذف هذه المحادثة نهائياً؟")) {
                       deleteConv.mutate(selectedConv!);
                     }

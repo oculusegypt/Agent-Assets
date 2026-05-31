@@ -5,7 +5,7 @@ import { eq, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs";
 import { resolve, join, dirname } from "path";
-import { callAIForTask, callGeminiTTS, callGeminiImageGen, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
+import { callAIForTask, callAIForTaskStream, callGeminiTTS, callGeminiImageGen, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
 import { saveTtsAudio, saveImageFile, extractTtsScript } from "../lib/media.js";
 import { broadcast } from "../lib/ws.js";
 
@@ -153,19 +153,13 @@ router.post("/stream", async (req, res) => {
       content: h.text || h.content || "",
     }));
 
-    const result = await callAIForTask("text_complex", billiePrompt, message, { history: msgs });
+    let finalText = "";
+    const { model, tokens } = await callAIForTaskStream(
+      "text_complex", billiePrompt, message, { history: msgs },
+      (text: string) => { finalText = text; send({ type: "chunk", text }); }
+    );
 
-    // Simulate word-by-word streaming of the complete result
-    const words = result.text.split(" ");
-    let accumulated = "";
-    for (let i = 0; i < words.length; i++) {
-      accumulated += (i > 0 ? " " : "") + words[i];
-      send({ type: "chunk", text: accumulated, word_index: i, total_words: words.length });
-      // Small delay for streaming effect (5-15ms per word)
-      await new Promise(r => setTimeout(r, 8));
-    }
-
-    send({ type: "done", text: result.text, model: result.model, tokens: result.tokens, timestamp: new Date().toISOString() });
+    send({ type: "done", text: finalText, model, tokens, timestamp: new Date().toISOString() });
 
     await db.insert(activityTable).values({
       id: randomUUID(), type: "billie_alert",

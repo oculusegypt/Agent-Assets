@@ -1,4 +1,6 @@
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useListAgents, useGetBillieAlerts, useGetSystemMetrics, useExecuteAgent } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -302,8 +304,8 @@ ${ethicsInput}
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
-              <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90" dir="rtl">
-                {ethicsResult}
+              <div className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-p:text-foreground/90 prose-headings:text-foreground prose-headings:font-bold prose-strong:text-foreground prose-code:text-orange-400 prose-code:bg-secondary prose-code:px-1 prose-code:rounded prose-li:text-foreground/85 prose-ul:text-right prose-ol:text-right" dir="rtl">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{ethicsResult}</ReactMarkdown>
               </div>
             </div>
             <div className="flex items-center justify-between px-4 py-3 border-t border-border/30 bg-secondary/10">

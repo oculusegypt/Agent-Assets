@@ -1,4 +1,6 @@
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   useListNexusTasks, useGetNexusSummary, useListAgents, useCreateNexusTask,
 } from "@workspace/api-client-react";
@@ -80,8 +82,8 @@ function TaskResultModal({ taskId, onClose }: { taskId: string; onClose: () => v
             </div>
           )}
           {task?.result && (
-            <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90" dir="rtl">
-              {task.result}
+            <div className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-p:text-foreground/90 prose-headings:text-foreground prose-headings:font-bold prose-strong:text-foreground prose-code:text-emerald-400 prose-code:bg-secondary prose-code:px-1 prose-code:rounded prose-li:text-foreground/85 prose-ul:text-right prose-ol:text-right" dir="rtl">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{task.result}</ReactMarkdown>
             </div>
           )}
           {task?.status === "failed" && !task?.result && (
