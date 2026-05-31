@@ -17,7 +17,7 @@ import {
   Building2, FileText, BarChart3, Presentation, Mail,
   CalendarDays, BookOpen, Search, Workflow, Users,
   CheckCircle2, Clock, AlertCircle, TrendingUp, Brain,
-  Plus, X, Trash2, Layers,
+  Plus, X, Trash2, Layers, Kanban,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -55,40 +55,29 @@ const PRIORITY_AR: Record<string, string> = {
   urgent: "عاجل", high: "مرتفع", medium: "متوسط", low: "منخفض",
 };
 
+const KANBAN_COLS: { key: string; label: string; icon: any; color: string; border: string; bg: string }[] = [
+  { key: "pending",   label: "منتظر",   icon: Clock,         color: "text-muted-foreground", border: "border-border/50",       bg: "bg-secondary/20" },
+  { key: "running",   label: "جارٍ",    icon: Brain,         color: "text-primary",           border: "border-primary/30",      bg: "bg-primary/5" },
+  { key: "completed", label: "مكتمل",   icon: CheckCircle2,  color: "text-emerald-400",       border: "border-emerald-400/30",  bg: "bg-emerald-400/5" },
+  { key: "failed",    label: "فشل",     icon: AlertCircle,   color: "text-red-400",           border: "border-red-400/30",      bg: "bg-red-400/5" },
+];
+
 function TaskResultModal({ taskId, onClose }: { taskId: string; onClose: () => void }) {
-  const { data: task, isLoading } = useGetNexusTask(taskId);
+  const { data: task, isLoading } = useGetNexusTask({ taskId });
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm" dir="rtl">
-      <div className="bg-card border border-emerald-500/30 rounded-lg w-full max-w-3xl max-h-[85vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-card border border-emerald-500/30 rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-border/50">
-          <button onClick={onClose} className="p-1 hover:bg-secondary rounded"><X size={16} /></button>
-          <div className="text-right">
-            <h3 className="font-bold">{task?.title || "نتيجة المهمة"}</h3>
-            {task && (
-              <p className="text-xs text-muted-foreground font-mono">
-                {task.assigned_agent} ·
-                <span className={task.status === "completed" ? " text-emerald-400" : task.status === "failed" ? " text-red-400" : " text-amber-400 animate-pulse"}>
-                  {" "}{STATUS_AR[task.status] || task.status}
-                </span>
-              </p>
-            )}
-          </div>
+          <button onClick={onClose} className="p-1 hover:bg-secondary rounded"><X size={15} /></button>
+          <h3 className="font-bold text-right">{isLoading ? "…" : task?.title}</h3>
         </div>
         <div className="flex-1 overflow-y-auto p-4">
-          {isLoading && <div className="text-center py-8"><Clock size={24} className="mx-auto mb-2 animate-spin text-muted-foreground" /></div>}
-          {task?.status === "running" && !task?.result && (
-            <div className="text-center py-8 text-amber-400">
-              <Brain size={24} className="mx-auto mb-2 animate-pulse" />
-              <p className="text-sm font-mono">الوكيل يعمل… يرجى الانتظار</p>
-            </div>
-          )}
-          {task?.result && (
-            <div className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-p:text-foreground/90 prose-headings:text-foreground prose-headings:font-bold prose-strong:text-foreground prose-code:text-emerald-400 prose-code:bg-secondary prose-code:px-1 prose-code:rounded prose-li:text-foreground/85 prose-ul:text-right prose-ol:text-right" dir="rtl">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{task.result}</ReactMarkdown>
-            </div>
-          )}
-          {task?.status === "failed" && !task?.result && (
-            <p className="text-red-400 text-sm">فشل التنفيذ — تحقق من الاتصال.</p>
+          {isLoading ? <Skeleton className="h-32 bg-secondary" /> : (
+            task?.result ? (
+              <div className="prose prose-sm prose-invert max-w-none text-right" dir="rtl">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{task.result}</ReactMarkdown>
+              </div>
+            ) : <p className="text-muted-foreground text-center py-8">لا توجد نتيجة بعد</p>
           )}
         </div>
       </div>
@@ -104,7 +93,7 @@ export default function NexusPage() {
   const deleteTask  = useDeleteNexusTask();
   const qc = useQueryClient();
 
-  const [tab, setTab] = useState<"tasks" | "new" | "templates" | "analytics">("tasks");
+  const [tab, setTab] = useState<"kanban" | "new" | "templates" | "analytics">("kanban");
   const [form, setForm] = useState({ title: "", description: "", type: "document", priority: "medium" });
   const [viewTaskId, setViewTaskId] = useState<string | null>(null);
 
@@ -118,7 +107,7 @@ export default function NexusPage() {
     try {
       const res = await createTask.mutateAsync({ data: form as any });
       qc.invalidateQueries();
-      setTab("tasks");
+      setTab("kanban");
       setViewTaskId((res as any)?.id ?? null);
       setForm({ title: "", description: "", type: "document", priority: "medium" });
       toast.success("تم إنشاء المهمة بنجاح ✓", { id: tid });
@@ -144,7 +133,7 @@ export default function NexusPage() {
   }
 
   const TABS = [
-    { key: "tasks",     label: "لوحة المهام",   icon: CheckCircle2 },
+    { key: "kanban",    label: "لوحة كانبان",   icon: Kanban },
     { key: "templates", label: "القوالب",        icon: Layers },
     { key: "new",       label: "مهمة جديدة",    icon: Plus },
     { key: "analytics", label: "التحليلات",     icon: TrendingUp },
@@ -196,14 +185,22 @@ export default function NexusPage() {
         ))}
       </div>
 
-      {tab === "tasks" && (
-        <div className="space-y-3">
+      {/* ─── KANBAN BOARD ───────────────────────────────────────────────── */}
+      {tab === "kanban" && (
+        <div>
           {tLoad ? (
-            Array(4).fill(0).map((_, i) => <Skeleton key={i} className="h-20 bg-card border-border/50" />)
+            <div className="grid grid-cols-4 gap-4">
+              {KANBAN_COLS.map(col => (
+                <div key={col.key} className="space-y-3">
+                  <Skeleton className="h-8 bg-card" />
+                  {Array(2).fill(0).map((_, i) => <Skeleton key={i} className="h-28 bg-card" />)}
+                </div>
+              ))}
+            </div>
           ) : !tasks?.length ? (
             <div className="text-center py-12 text-muted-foreground">
-              <CheckCircle2 size={36} className="mx-auto mb-3 opacity-30" />
-              <p>لا توجد مهام — ابدأ مهمة جديدة أو استخدم قالباً</p>
+              <Kanban size={36} className="mx-auto mb-3 opacity-30" />
+              <p>لوحة الكانبان فارغة — ابدأ مهمة جديدة أو استخدم قالباً</p>
               <div className="flex items-center gap-2 justify-center mt-4">
                 <Button onClick={() => setTab("templates")} variant="outline" className="gap-2 text-xs border-emerald-500/30 text-emerald-400">
                   <Layers size={12} /> استخدم قالباً
@@ -213,57 +210,77 @@ export default function NexusPage() {
                 </Button>
               </div>
             </div>
-          ) : tasks.map(task => {
-            const Icon = TASK_TYPE_ICONS[task.type] ?? Brain;
-            return (
-              <div key={task.id} className="p-4 rounded border border-border/50 bg-card hover:border-emerald-500/20 transition-colors">
-                <div className="flex items-start gap-3">
-                  <div className="flex flex-col items-center gap-1 mt-0.5">
-                    <button onClick={(e) => handleDelete(task.id, e)}
-                      className="p-1 hover:bg-red-500/10 hover:text-red-400 rounded text-muted-foreground/50 transition-colors">
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                  <button className="flex-1 text-right" onClick={() => setViewTaskId(task.id)}>
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Badge className={`text-[10px] font-mono border ${STATUS_STYLES[task.status]}`}>
-                          {task.status === "running" && <Clock size={8} className="inline mr-0.5 animate-spin" />}
-                          {STATUS_AR[task.status] || task.status}
-                        </Badge>
-                        <Badge className={`text-[10px] font-mono border ${PRIORITY_STYLES[task.priority]}`}>
-                          {PRIORITY_AR[task.priority] || task.priority}
-                        </Badge>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              {KANBAN_COLS.map(col => {
+                const colTasks = tasks.filter(t => t.status === col.key);
+                const ColIcon = col.icon;
+                return (
+                  <div key={col.key} className={`rounded-xl border ${col.border} ${col.bg} flex flex-col min-h-[200px]`}>
+                    {/* Column Header */}
+                    <div className={`flex items-center justify-between px-3 py-2.5 border-b ${col.border}`}>
+                      <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded-full border ${STATUS_STYLES[col.key]} shrink-0`}>
+                        {colTasks.length}
+                      </span>
+                      <div className={`flex items-center gap-1.5 font-semibold text-sm ${col.color}`}>
+                        <span>{col.label}</span>
+                        <ColIcon size={14} className={col.key === "running" ? "animate-pulse" : ""} />
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-sm">{task.title}</span>
-                        <div className="w-7 h-7 rounded bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0">
-                          <Icon size={13} className="text-emerald-400" />
+                    </div>
+                    {/* Cards */}
+                    <div className="p-2 space-y-2 flex-1">
+                      {colTasks.length === 0 ? (
+                        <div className="text-center py-6 text-muted-foreground/30 text-xs">
+                          لا توجد مهام
                         </div>
-                      </div>
+                      ) : colTasks.map(task => {
+                        const Icon = TASK_TYPE_ICONS[task.type] ?? Brain;
+                        return (
+                          <div key={task.id}
+                            className="p-3 rounded-lg bg-card border border-border/40 hover:border-emerald-500/20 transition-all cursor-pointer group shadow-sm"
+                            onClick={() => setViewTaskId(task.id)}>
+                            {/* Title row */}
+                            <div className="flex items-start justify-between gap-2 mb-2">
+                              <button
+                                onClick={e => handleDelete(task.id, e)}
+                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/10 hover:text-red-400 rounded text-muted-foreground/30 transition-all shrink-0">
+                                <Trash2 size={10} />
+                              </button>
+                              <div className="flex items-center gap-1.5 flex-1 justify-end">
+                                <span className="font-semibold text-xs leading-tight text-right line-clamp-2">{task.title}</span>
+                                <div className={`w-6 h-6 rounded flex items-center justify-center shrink-0 border ${STATUS_STYLES[col.key]}`}>
+                                  <Icon size={11} />
+                                </div>
+                              </div>
+                            </div>
+                            {/* Description */}
+                            <p className="text-[10px] text-muted-foreground line-clamp-2 text-right mb-2">{task.description}</p>
+                            {/* Footer */}
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-[9px] font-mono text-muted-foreground/40">
+                                {new Date(task.created_at).toLocaleDateString("ar-SA")}
+                              </span>
+                              <div className="flex items-center gap-1">
+                                <span className={`text-[9px] font-mono border rounded px-1 py-0.5 ${PRIORITY_STYLES[task.priority]}`}>
+                                  {PRIORITY_AR[task.priority]}
+                                </span>
+                                <span className="text-[9px] font-mono text-muted-foreground/50">
+                                  {TASK_TYPE_AR[task.type]}
+                                </span>
+                              </div>
+                            </div>
+                            {task.status === "completed" && (
+                              <div className="mt-1.5 text-[9px] text-emerald-400 font-mono text-right">اضغط لعرض النتيجة ←</div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                    <p className="text-xs text-muted-foreground line-clamp-2 text-right mb-2">{task.description}</p>
-                    <div className="flex items-center justify-between text-xs font-mono text-muted-foreground">
-                      <span>{new Date(task.created_at).toLocaleString("ar-SA")}</span>
-                      <span>{task.assigned_agent} · {TASK_TYPE_AR[task.type] || task.type}</span>
-                    </div>
-                    {task.status === "completed" && (
-                      <div className="flex items-center gap-2 mt-2">
-                        <div className="text-xs text-emerald-400 font-mono">اضغط لعرض النتيجة ←</div>
-                        {task.result && (
-                          <button
-                            onClick={e => { e.stopPropagation(); navigator.clipboard?.writeText(task.result!); }}
-                            className="text-[10px] font-mono text-muted-foreground hover:text-emerald-400 px-1.5 py-0.5 rounded border border-border/30 hover:border-emerald-500/30 transition-colors">
-                            نسخ
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
