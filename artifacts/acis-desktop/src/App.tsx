@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { UIProvider } from "./contexts/ui-settings";
 import { Layout } from "./components/layout";
 import { CommandPalette } from "./components/command-palette";
+import { GlobalErrorBoundary, ErrorBoundary } from "./components/error-boundary";
 import Dashboard from "./pages/dashboard";
 import BilliePage from "./pages/billie";
 import AcisPage from "./pages/acis";
@@ -37,15 +38,15 @@ function Router() {
   return (
     <Layout>
       <Switch>
-        <Route path="/" component={Dashboard} />
-        <Route path="/billie" component={BilliePage} />
-        <Route path="/acis" component={AcisPage} />
-        <Route path="/production" component={ProductionPage} />
-        <Route path="/nexus" component={NexusPage} />
-        <Route path="/caeos" component={CaeosPage} />
-        <Route path="/conversations" component={ConversationsPage} />
-        <Route path="/archive" component={ArchivePage} />
-        <Route path="/settings" component={SettingsPage} />
+        <Route path="/" component={() => <ErrorBoundary pageName="لوحة التحكم"><Dashboard /></ErrorBoundary>} />
+        <Route path="/billie" component={() => <ErrorBoundary pageName="بيليه"><BilliePage /></ErrorBoundary>} />
+        <Route path="/acis" component={() => <ErrorBoundary pageName="ACIS السينمائي"><AcisPage /></ErrorBoundary>} />
+        <Route path="/production" component={() => <ErrorBoundary pageName="خط الإنتاج"><ProductionPage /></ErrorBoundary>} />
+        <Route path="/nexus" component={() => <ErrorBoundary pageName="نيكسوس"><NexusPage /></ErrorBoundary>} />
+        <Route path="/caeos" component={() => <ErrorBoundary pageName="كايوس"><CaeosPage /></ErrorBoundary>} />
+        <Route path="/conversations" component={() => <ErrorBoundary pageName="تواصل الوكلاء"><ConversationsPage /></ErrorBoundary>} />
+        <Route path="/archive" component={() => <ErrorBoundary pageName="الأرشيف"><ArchivePage /></ErrorBoundary>} />
+        <Route path="/settings" component={() => <ErrorBoundary pageName="الإعدادات"><SettingsPage /></ErrorBoundary>} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
@@ -54,20 +55,22 @@ function Router() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <UIProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <RealtimeProvider>
-              <Router />
-            </RealtimeProvider>
-          </WouterRouter>
-          <Toaster />
-          <SonnerToaster position="bottom-left" richColors dir="rtl" />
-          <CommandPalette />
-        </UIProvider>
-      </TooltipProvider>
-    </QueryClientProvider>
+    <GlobalErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <UIProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <RealtimeProvider>
+                <Router />
+              </RealtimeProvider>
+            </WouterRouter>
+            <Toaster />
+            <SonnerToaster position="bottom-left" richColors dir="rtl" />
+            <CommandPalette />
+          </UIProvider>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </GlobalErrorBoundary>
   );
 }
 

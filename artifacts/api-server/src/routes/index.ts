@@ -7,6 +7,7 @@ import conversationsRouter from "./conversations";
 import systemRouter from "./system";
 import nexusRouter from "./nexus";
 import settingsRouter from "./settings";
+import caeosRouter from "./caeos";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use("/conversations", conversationsRouter);
 router.use("/system", systemRouter);
 router.use("/nexus", nexusRouter);
 router.use("/settings", settingsRouter);
+router.use("/caeos", caeosRouter);
 
 export default router;

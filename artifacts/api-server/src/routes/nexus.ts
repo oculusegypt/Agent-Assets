@@ -275,6 +275,20 @@ router.delete("/tasks/:taskId", async (req, res) => {
   res.json({ success: true, deleted_id: taskId });
 });
 
+router.patch("/tasks/:taskId/status", async (req, res) => {
+  const { taskId } = req.params;
+  const { status } = req.body;
+  const allowed = ["pending", "running", "completed", "failed"];
+  if (!allowed.includes(status)) return res.status(400).json({ error: "حالة غير صالحة" });
+  const [task] = await db.update(nexusTasksTable)
+    .set({ status, ...(status === "completed" ? { completed_at: new Date() } : {}) })
+    .where(eq(nexusTasksTable.id, taskId))
+    .returning();
+  if (!task) return res.status(404).json({ error: "المهمة غير موجودة" });
+  broadcast("nexus_updated");
+  res.json({ success: true, task: { ...task, created_at: task.created_at?.toISOString() || new Date().toISOString(), completed_at: task.completed_at?.toISOString() || null } });
+});
+
 router.post("/recover-stuck", async (_req, res) => {
   try {
     const stuck = await db.select().from(nexusTasksTable).where(eq(nexusTasksTable.status, "running"));

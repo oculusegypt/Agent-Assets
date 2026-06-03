@@ -1188,12 +1188,31 @@ export default function BilliePage() {
       {/* ── NEWS TAB ── */}
       {tab === "news" && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <Button onClick={handleAnalyzeNews} disabled={analyzingNews}
-              className="gap-2 bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 text-xs h-8">
-              {analyzingNews ? <RefreshCw size={12} className="animate-spin" /> : <BrainCircuit size={12} />}
-              {analyzingNews ? "بيليه تحلل…" : "تحليل ذكي للأخبار"}
-            </Button>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Button onClick={handleAnalyzeNews} disabled={analyzingNews}
+                className="gap-2 bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 text-xs h-8">
+                {analyzingNews ? <RefreshCw size={12} className="animate-spin" /> : <BrainCircuit size={12} />}
+                {analyzingNews ? "بيليه تحلل…" : "تحليل ذكي"}
+              </Button>
+              <Button
+                onClick={async () => {
+                  const tid = toast.loading("بيليه تولّد أخباراً جديدة بالذكاء الاصطناعي…");
+                  try {
+                    const res = await fetch(`${BASE}/api/billie/refresh-news`, { method: "POST" });
+                    if (!res.ok) throw new Error(await res.text());
+                    const data = await res.json();
+                    toast.success(`تم توليد ${data.count} خبر جديد ✓`, { id: tid });
+                    qc.invalidateQueries({ queryKey: ["/api/billie/news"] });
+                  } catch (e: any) {
+                    toast.error(`فشل التوليد: ${e?.message}`, { id: tid });
+                  }
+                }}
+                className="gap-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 text-xs h-8">
+                <RefreshCw size={12} />
+                تحديث بالذكاء الاصطناعي
+              </Button>
+            </div>
             <div className="text-xs font-mono text-muted-foreground">أحدث أخبار الذكاء الاصطناعي — 2026</div>
           </div>
           {newsAnalysis && (

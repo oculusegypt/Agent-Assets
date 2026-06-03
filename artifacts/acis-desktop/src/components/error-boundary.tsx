@@ -1,5 +1,5 @@
 import { Component, ReactNode } from "react";
-import { AlertTriangle, RefreshCw, Home } from "lucide-react";
+import { AlertTriangle, RefreshCw, Home, Bug } from "lucide-react";
 
 interface Props {
   children: ReactNode;
@@ -27,8 +27,13 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.error) {
       return (
         <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 p-8" dir="rtl">
-          <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center">
-            <AlertTriangle size={28} className="text-red-400" />
+          <div className="relative">
+            <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center">
+              <AlertTriangle size={28} className="text-red-400" />
+            </div>
+            <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center">
+              <Bug size={10} className="text-red-400" />
+            </div>
           </div>
           <div className="text-center space-y-2 max-w-md">
             <h2 className="text-xl font-bold text-foreground">
@@ -37,9 +42,9 @@ export class ErrorBoundary extends Component<Props, State> {
             <p className="text-sm text-muted-foreground">
               واجه النظام خطأً غير متوقع. يمكنك إعادة المحاولة أو العودة للوحة القيادة.
             </p>
-            <details className="text-left mt-3">
-              <summary className="text-xs font-mono text-muted-foreground/50 cursor-pointer hover:text-muted-foreground">
-                تفاصيل الخطأ
+            <details className="text-left mt-3 group">
+              <summary className="text-xs font-mono text-muted-foreground/50 cursor-pointer hover:text-muted-foreground select-none">
+                ← تفاصيل الخطأ التقنية
               </summary>
               <pre className="mt-2 text-[10px] font-mono bg-secondary/50 border border-border/50 rounded p-3 text-red-300/70 overflow-auto max-h-32 text-left">
                 {this.state.error.toString()}
@@ -62,9 +67,20 @@ export class ErrorBoundary extends Component<Props, State> {
               لوحة القيادة
             </a>
           </div>
+          <div className="text-[10px] font-mono text-muted-foreground/30 text-center">
+            ACIS v3.0 · نظام التكامل السينمائي بالذكاء الاصطناعي
+          </div>
         </div>
       );
     }
     return this.props.children;
   }
+}
+
+export function GlobalErrorBoundary({ children }: { children: ReactNode }) {
+  return (
+    <ErrorBoundary pageName="نظام ACIS">
+      {children}
+    </ErrorBoundary>
+  );
 }

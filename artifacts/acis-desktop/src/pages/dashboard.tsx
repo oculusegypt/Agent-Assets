@@ -3,14 +3,35 @@ import { useGetSystemMetrics, useListAgents, useGetSystemActivity } from "@works
 import { useSystemHealthCheck } from "@workspace/api-client-react";
 import {
   Activity, Server, Users, Zap, CheckCircle2, Brain,
-  AlertTriangle, TrendingUp, RefreshCw, Cpu, BarChart3,
+  AlertTriangle, TrendingUp, RefreshCw, Cpu, BarChart3, Clock, Timer,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
+
+function useLiveClock() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
+function LiveClock() {
+  const now = useLiveClock();
+  const timeStr = now.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  const dateStr = now.toLocaleDateString("ar-SA", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      <div className="font-mono text-xl font-bold text-primary tabular-nums tracking-widest">{timeStr}</div>
+      <div className="text-[10px] font-mono text-muted-foreground/60">{dateStr}</div>
+    </div>
+  );
+}
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
@@ -120,20 +141,42 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6" dir="rtl">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">لوحة القيادة الرئيسية</h1>
-          <p className="text-muted-foreground font-mono text-sm mt-1">مقاييس النظام الحية والحالة التشغيلية</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button onClick={runHealthCheck} disabled={healthCheck.isPending}
-            className="px-3 py-1.5 rounded border border-border/50 bg-card text-xs font-mono text-muted-foreground hover:border-primary/30 hover:text-primary transition-colors disabled:opacity-50">
-            {healthCheck.isPending ? "جارٍ الفحص…" : "فحص صحة النظام"}
-          </button>
-          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-sm font-mono">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            النظام سليم
+      {/* Header with live clock */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-4">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-center shrink-0">
+            <Activity size={18} className="text-primary" />
           </div>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">لوحة القيادة الرئيسية</h1>
+            <p className="text-muted-foreground font-mono text-sm mt-1">مقاييس النظام الحية والحالة التشغيلية</p>
+            <div className="flex items-center gap-3 mt-2">
+              <button onClick={runHealthCheck} disabled={healthCheck.isPending}
+                className="px-3 py-1 rounded border border-border/50 bg-card text-xs font-mono text-muted-foreground hover:border-primary/30 hover:text-primary transition-colors disabled:opacity-50">
+                {healthCheck.isPending ? "جارٍ الفحص…" : "فحص الصحة"}
+              </button>
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-mono ${
+                health >= 90 ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500"
+                : health >= 70 ? "bg-amber-500/10 border-amber-500/20 text-amber-500"
+                : "bg-red-500/10 border-red-500/20 text-red-500"
+              }`}>
+                <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${health >= 90 ? "bg-emerald-500" : health >= 70 ? "bg-amber-500" : "bg-red-500"}`} />
+                {health >= 90 ? "النظام سليم" : health >= 70 ? "تحذير" : "يتطلب انتباهاً"}
+              </div>
+              {metrics?.uptime_hours != null && (
+                <div className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground/50">
+                  <Timer size={10} />
+                  <span>وقت التشغيل: {metrics.uptime_hours}س</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2 text-muted-foreground/30">
+            <Clock size={14} />
+          </div>
+          <LiveClock />
         </div>
       </div>
 
@@ -162,6 +205,22 @@ export default function Dashboard() {
             </>
           )}
         </div>
+      </div>
+
+      {/* ── Quick Actions ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "خط الإنتاج", sub: "قصة → رؤية", href: "/production", color: "text-primary border-primary/20 hover:border-primary/40 hover:bg-primary/5" },
+          { label: "بيليه", sub: "محادثة ذكية + TTS", href: "/billie", color: "text-violet-400 border-violet-400/20 hover:border-violet-400/40 hover:bg-violet-400/5" },
+          { label: "نيكسوس", sub: "مهام المكتب", href: "/nexus", color: "text-emerald-400 border-emerald-400/20 hover:border-emerald-400/40 hover:bg-emerald-400/5" },
+          { label: "الأرشيف", sub: "مخرجات الذكاء الاصطناعي", href: "/archive", color: "text-amber-400 border-amber-400/20 hover:border-amber-400/40 hover:bg-amber-400/5" },
+        ].map(q => (
+          <a key={q.href} href={q.href}
+            className={`p-3 rounded border bg-card transition-all cursor-pointer flex flex-col gap-1 group ${q.color}`}>
+            <div className="font-bold text-sm group-hover:underline">{q.label}</div>
+            <div className="text-[10px] font-mono text-muted-foreground/60">{q.sub}</div>
+          </a>
+        ))}
       </div>
 
       {/* ── Analytics Charts ── */}

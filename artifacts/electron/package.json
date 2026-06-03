@@ -1,0 +1,77 @@
+{
+  "name": "@workspace/acis-electron",
+  "version": "3.0.0",
+  "description": "ACIS — نظام التكامل السينمائي بالذكاء الاصطناعي",
+  "homepage": "https://github.com/acis/cinematic-ai",
+  "author": {
+    "name": "ACIS Team",
+    "email": "acis@example.com"
+  },
+  "private": true,
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "build:main": "tsc -p tsconfig.electron.json",
+    "build:frontend": "pnpm --filter @workspace/acis-desktop run build",
+    "build:backend": "pnpm --filter @workspace/api-server run build",
+    "build:all": "pnpm run build:frontend && pnpm run build:backend && pnpm run build:main",
+    "electron": "electron .",
+    "dist": "pnpm run build:all && electron-builder",
+    "dist:win": "pnpm run build:all && electron-builder --win",
+    "dist:linux": "pnpm run build:all && electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.9.0",
+    "@types/node": "^25.3.3"
+  },
+  "build": {
+    "appId": "com.acis.cinematic-ai",
+    "productName": "ACIS — مركز القيادة السينمائي",
+    "copyright": "Copyright © 2026 ACIS",
+    "directories": {
+      "output": "dist-app",
+      "buildResources": "build-resources"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "dist-frontend/**/*",
+      "dist-backend/**/*",
+      "node_modules/**/*",
+      "!node_modules/.cache"
+    ],
+    "extraResources": [
+      {
+        "from": "../../data",
+        "to": "data",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "build-resources/icon.ico"
+    },
+    "linux": {
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] }
+      ],
+      "icon": "build-resources/icon.png",
+      "category": "Multimedia",
+      "maintainer": "ACIS Team <acis@example.com>"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerLanguages": ["ar", "en"],
+      "language": "ar",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ACIS"
+    },
+    "nodeGypRebuild": false,
+    "npmRebuild": false
+  }
+}

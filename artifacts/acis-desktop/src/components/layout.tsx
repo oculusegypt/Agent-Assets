@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { useGetSystemMetrics } from "@workspace/api-client-react";
 import { useUI } from "../contexts/ui-settings";
+import { NotificationsPanel } from "./notifications-panel";
 
 const NAV_SECTIONS = [
   {
@@ -113,7 +114,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Status Footer */}
-        <div className={`p-3 border-t border-border/50 space-y-2 ${sidebarCompact ? "flex flex-col items-center" : ""}`}>
+        <div className={`p-3 border-t border-border/50 space-y-2 ${sidebarCompact ? "flex flex-col items-center gap-2" : ""}`}>
+          {/* Notifications */}
+          <NotificationsPanel compact={sidebarCompact} />
+
           {sidebarCompact ? (
             <div className={`w-2 h-2 rounded-full ${healthScore >= 90 ? "bg-emerald-400" : healthScore >= 70 ? "bg-amber-400" : "bg-red-400"} animate-pulse`} title={`الصحة: ${healthScore}%`} />
           ) : (
@@ -136,7 +140,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <kbd className="bg-secondary border border-border/40 px-1 py-0.5 rounded text-[9px]">⌘K</kbd>
               </button>
               <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground justify-end">
-                <span className="opacity-40">v2.0</span>
+                <span className="opacity-40">v3.0</span>
                 <span className="ml-auto">النظام سليم</span>
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               </div>

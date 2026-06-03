@@ -1,300 +1,135 @@
-# خطة التطوير الشاملة — مركز قيادة ACIS
-## من النموذج الأولي إلى النظام الحقيقي الكامل
+# ACIS — خطة التطوير الشاملة v3.0
+## نظام التكامل السينمائي بالذكاء الاصطناعي
 
-> **الأولوية:** تطبيق عملي متدرج — كل مرحلة تُنتج قيمة حقيقية قابلة للاختبار  
-> **المبدأ:** لا بيانات مزيفة، لا ردود محفوظة، لا عمليات وهمية
-
----
-
-## المرحلة الأولى: الأساس الحقيقي (فوري — أسبوع واحد)
-**الهدف:** جعل الوكلاء يفكرون فعلاً باستخدام Gemini
-
-### 1.1 — تكامل Gemini AI في كل وكيل
-
-**الإجراء الفوري:**
-```typescript
-// في مسار agent execute:
-const response = await ai.models.generateContent({
-  model: "gemini-2.5-flash",
-  contents: [
-    { role: "user", parts: [{ text: buildAgentPrompt(agent, userInput) }] }
-  ],
-  config: { maxOutputTokens: 8192 }
-});
-```
-
-**برومبت نظام مخصص لكل وكيل:**
-- مؤلف القصة → خبير في كتابة السيناريو العربي، يعرف بنية 3 فصول
-- عين الصدق → محقق حقائق، يطرح أسئلة للتحقق من كل ادعاء
-- المخرج → متخصص في الإخراج السينمائي، يفكر بالصورة
-
-**المخرج:** كل محادثة مع أي وكيل تستخدم Gemini حقيقياً.
+> تاريخ المراجعة: يونيو 2026 | الإصدار الحالي: v2.0 | الإصدار المستهدف: v3.0
 
 ---
 
-### 1.2 — محادثات مع ذاكرة سياق حقيقية
+## 📊 تقرير تقييم الحالة الراهنة
 
-**حالياً:** كل رسالة معزولة  
-**المطلوب:** يرسل النظام كل تاريخ المحادثة إلى Gemini كـ context
+### تقييم كل صفحة ومكون
 
-```typescript
-const history = await db.select().from(messagesTable)
-  .where(eq(messagesTable.conversation_id, conversationId));
+| المكوّن | الجودة | الحالة | أبرز المشاكل |
+|---------|--------|--------|-----------|
+| لوحة التحكم (Dashboard) | 8/10 | ✅ مكتملة | تفتقر لساعة حية ومؤشرات متحركة |
+| بيليه المشرف (Billie) | 9/10 | ✅ مكتملة | أخبار AI ثابتة hardcoded |
+| ACIS السينمائي | 8.5/10 | ✅ مكتملة | pipeline stream يعمل جيداً |
+| خط الإنتاج (Production) | 9/10 | ✅ مكتملة | أفضل صفحة في التطبيق |
+| نيكسوس المكتبي (Nexus) | 7/10 | ⚠️ جزئية | Kanban للقراءة فقط |
+| كايوس / سيرفكس (CAEOS) | 7/10 | ⚠️ جزئية | لا مسارات API خاصة (404) |
+| تواصل الوكلاء | 8/10 | ✅ مكتملة | يفتقر بحثاً داخل المحادثات |
+| أرشيف النتائج | 8.5/10 | ✅ مكتملة | يحتاج تصدير دفعات |
+| الإعدادات | 8/10 | ✅ مكتملة | واضحة ومنظمة |
 
-const contents = history.map(m => ({
-  role: m.role === "assistant" ? "model" : "user",
-  parts: [{ text: m.content }]
-}));
-```
+### المشاكل المحددة
+1. **لا Error Boundary عالمي** — أي خطأ React يسبب شاشة بيضاء كاملة
+2. **أخبار بيليه ثابتة** — مصفوفة AI_NEWS مُدمَّجة في الكود
+3. **Nexus Kanban للقراءة فقط** — لا يمكن سحب البطاقات بين الأعمدة
+4. **CAEOS بلا مسارات API** — /api/caeos/score و /api/caeos/layers يعطيان 404
+5. **لا مركز إشعارات** — أحداث WebSocket تُفقد دون واجهة واضحة
+6. **استعلامات غير محدودة** — agent_executions ستصبح عائقاً مع النمو
+7. **لا حماية للمسارات** — جميع الـ API عامة بدون توثيق هوية
+8. **CAEOS route غير مُسجَّل** — routes/caeos.ts غير موجود أصلاً
 
 ---
 
-### 1.3 — الواجهة عربية بالكامل (RTL)
+## 🚀 الاقتراحات الثورية
 
-**التغييرات المطلوبة:**
-- إضافة `dir="rtl"` على `<html>` والعناصر العربية
-- ترجمة كل نصوص التنقل والعناوين
-- الحفاظ على LTR للكود والمعرّفات التقنية
-- خط عربي احترافي: Cairo أو Tajawal
+### المستوى 1 — تحسينات فورية (مُنفَّذة الآن ✅)
+1. **Error Boundary شامل** — منع الشاشة البيضاء نهائياً مع واجهة إنقاذ عربية
+2. **مركز الإشعارات الحي** — جرس في الشريط الجانبي بأحداث WebSocket الفورية
+3. **مسارات CAEOS الحقيقية** — /score و /layers و /analyze بذكاء اصطناعي حقيقي
+4. **ساعة حية في Dashboard** — توقيت حي + مؤشرات متحركة + إجراءات سريعة
+5. **تحسين أداء الشريط الجانبي** — عرض حالة الوكلاء الحية
+
+### المستوى 2 — تحسينات متوسطة المدى
+6. **مولد الأخبار الذكي** — استبدال AI_NEWS الثابتة بتوليد Qwen ديناميكي
+7. **بحث داخل المحادثات** — شريط بحث مع تمييز النتائج
+8. **Nexus Drag & Drop** — بطاقات Kanban قابلة للسحب بين الأعمدة
+9. **تصدير دفعات الأرشيف** — تحديد عدة نتائج وتصديرها معاً
+10. **صفحة تحليلات متقدمة** — رسوم بيانية تاريخية مفصّلة
+
+### المستوى 3 — ميزات ثورية (الشهر القادم)
+11. **نظام RAG للذاكرة** — embeddings للمحادثات للذاكرة طويلة الأمد
+12. **Multi-Agent Collaboration** — وكلاء يتحدثون مع بعضهم فوراً
+13. **AI Director Mode** — Billie تُخطط وتُنفذ مشاريع باستقلالية كاملة
+14. **التحقق الأخلاقي التلقائي** — CAEOS يفحص كل مخرجات الإنتاج
+15. **لوحة تكاليف API** — تكاليف حقيقية + تنبيهات تجاوز الحصة
 
 ---
 
-## المرحلة الثانية: الإنتاج الحقيقي (أسبوعان)
-**الهدف:** توليد أصول حقيقية — نص، صورة، صوت
+## 📋 خطة التنفيذ المُفصَّلة
 
-### 2.1 — توليد السيناريو الحقيقي
+### المرحلة 1 — الأساسيات الحرجة ✅ مكتملة
+- [x] Error Boundary عالمي (error-boundary.tsx)
+- [x] مسارات CAEOS الحقيقية (api/caeos.ts)
+- [x] مركز الإشعارات الحي (notifications-panel.tsx)
+- [x] تحديث لوحة التحكم بساعة حية ومؤشرات أفضل
+- [x] تحسين layout.tsx بجرس الإشعارات
 
-**التسلسل:**
-1. المستخدم يدخل فكرة المشروع
-2. مؤلف القصة (Gemini) يولد سيناريو كامل بتنسيق JSON منظم
-3. يُحفظ السيناريو في جدول `scripts` الجديد في قاعدة البيانات
-4. تقسيم المشاهد يقرأ السيناريو ويولد JSON لكل مشهد
+### المرحلة 2 — التفاعلية (قادمة)
+- [ ] Nexus Kanban Drag & Drop
+- [ ] بحث داخل المحادثات
+- [ ] مولد الأخبار الديناميكي عبر Qwen
 
-**هيكل JSON للمشهد:**
-```json
-{
-  "scene_number": 1,
-  "location": "بغداد العباسية — بيت الحكمة",
-  "time": "فجر",
-  "characters": ["الخوارزمي", "تلميذه"],
-  "action": "يشرح الخوارزمي معادلة رياضية...",
-  "dialogue": [...],
-  "visual_mood": "دافئ، ذهبي، ضباب الصباح",
-  "camera": "لقطة قريبة تتسع تدريجياً"
+### المرحلة 3 — الذكاء المتقدم (قادمة)
+- [ ] نظام RAG للذاكرة
+- [ ] AI Director Mode في Billie
+- [ ] التحليل الأخلاقي التلقائي لكل مخرجات الإنتاج
+
+---
+
+## 🏗️ القرارات التقنية
+
+| القرار | الخيار المختار | السبب |
+|--------|----------------|-------|
+| Error Boundary | React Class Component | الوحيد الذي يلتقط أخطاء Render في React |
+| الإشعارات | WebSocket موجود + useState | لا حاجة لمكتبة إضافية |
+| CAEOS API | SQLite queries + callAIForTask | اتساق مع باقي المسارات |
+| Drag & Drop | HTML5 native API | لا مكتبات إضافية — أخف وأسرع |
+| الأخبار الديناميكية | Qwen AI generation | الأسرع والأفضل للعربية |
+
+---
+
+## 📈 مؤشرات النجاح
+
+- **صفر شاشة بيضاء** بعد إضافة Error Boundary
+- **زمن استجابة < 200ms** لجميع مسارات CAEOS الجديدة
+- **تغطية 100%** لأحداث WebSocket في مركز الإشعارات
+- **Kanban تفاعلي** بتحريك فوري للبطاقات دون إعادة تحميل
+
+---
+
+## 🔧 التفاصيل التقنية للتنفيذ
+
+### Error Boundary
+```tsx
+class ErrorBoundary extends React.Component {
+  state = { hasError: false, error: null };
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(error, info) { console.error('[ACIS Error]', error, info); }
+  render() { return this.state.hasError ? <ErrorFallback /> : this.props.children; }
 }
 ```
 
-### 2.2 — توليد الصور عبر Fal.ai (مجاني جزئياً)
-
+### CAEOS API
 ```typescript
-// باستخدام FLUX.1 Schnell عبر Fal.ai
-const result = await fal.subscribe("fal-ai/flux/schnell", {
-  input: { prompt: imagePrompt, image_size: "landscape_16_9" }
-});
-// حفظ الرابط في جدول generation_jobs
+GET  /api/caeos/score   → نقاط الامتثال الأخلاقي للنظام
+GET  /api/caeos/layers  → حالة الـ 15 طبقة السيادية
+POST /api/caeos/analyze → تحليل أخلاقي بالذكاء الاصطناعي
 ```
 
-**البديل المجاني:** Gemini Flash Image (متوفر عبر Replit AI Integrations)
-
-### 2.3 — توليد الصوت العربي عبر HuggingFace
-
+### مركز الإشعارات
 ```typescript
-// Kokoro TTS مجاني عبر HuggingFace Inference
-const audio = await fetch(
-  "https://api-inference.huggingface.co/models/hexgrad/Kokoro-82M",
-  { method: "POST", body: JSON.stringify({ inputs: arabicText }) }
-);
-```
-
-### 2.4 — تخزين الأصول المولّدة
-
-إضافة جدول `generated_assets`:
-```sql
-CREATE TABLE generated_assets (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
-  scene_id TEXT,
-  type TEXT NOT NULL, -- image, video, audio, script
-  url TEXT,
-  b64_data TEXT,
-  prompt TEXT,
-  model_used TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-```
-
----
-
-## المرحلة الثالثة: ذكاء بيليه الحقيقي (أسبوع ثالث)
-
-### 3.1 — تحليل بيليه الحقيقي
-
-بدلاً من توصيات ثابتة:
-```typescript
-const analysisPrompt = `
-أنت بيليه، المشرف الأعلى لنظام ACIS. 
-بيانات النظام الحالية:
-- عدد الوكلاء: ${agents.length} | المتصلون: ${onlineCount}
-- التنبيهات النشطة: ${alerts.map(a => a.title).join(', ')}
-- المشاريع الجارية: ${projects.filter(p => p.status !== 'completed').length}
-- نقاط الصحة: ${healthScore}%
-
-قم بتحليل شامل وأعط توصيات محددة وقابلة للتنفيذ.
-`;
-
-const analysis = await ai.models.generateContent({
-  model: "gemini-2.5-pro",
-  contents: [{ role: "user", parts: [{ text: analysisPrompt }] }]
-});
-```
-
-### 3.2 — أخبار الذكاء الاصطناعي الحقيقية
-
-```typescript
-// جلب أخبار من RSS feeds مجانية
-const feeds = [
-  "https://feeds.feedburner.com/oreilly/radar",
-  "https://blog.google/technology/ai/rss/",
-  "https://www.anthropic.com/rss.xml"
-];
-// ثم Gemini يلخص ويترجم للعربية
-```
-
----
-
-## المرحلة الرابعة: NEXUS الحقيقي (أسبوع رابع)
-
-### 4.1 — معالجة الوثائق الحقيقية
-
-```typescript
-// رفع ملف → قراءة نص → Gemini يحلل
-app.post('/nexus/tasks/process-document', upload.single('file'), async (req) => {
-  const text = await extractText(req.file); // pdf-parse أو mammoth
-  const analysis = await gemini.generateContent({
-    contents: [{ role: "user", parts: [{
-      text: `حلل هذا المستند وأعط: ملخصاً، نقاط العمل، القرارات المهمة:\n${text}`
-    }]}]
-  });
-});
-```
-
-### 4.2 — البحث الحقيقي
-
-```typescript
-// استخدام Tavily API (مجاني بحد معين)
-const searchResults = await tavily.search(query, { searchDepth: "advanced" });
-const synthesis = await gemini.generateContent({
-  contents: [{ role: "user", parts: [{
-    text: `بناءً على هذه النتائج، أعد تقرير بحثي منظم:\n${JSON.stringify(searchResults)}`
-  }]}]
+// WebSocket events → notifications store → Bell UI
+ws.on('message', (event) => {
+  const data = JSON.parse(event.data);
+  if (NOTIFICATION_EVENTS.includes(data.type)) {
+    addNotification(data);
+  }
 });
 ```
 
 ---
 
-## المرحلة الخامسة: CAEOS الحقيقي (مستمر)
-
-### 5.1 — تطبيق 3 طبقات أساسية حقيقية
-
-**الطبقة 1: الأخلاق (Ethics Gate)**
-```typescript
-// قبل أي تنفيذ لوكيل
-const ethicsCheck = await gemini.generateContent({
-  contents: [{ role: "user", parts: [{
-    text: `هل هذا الطلب آمن وأخلاقي؟ "${userInput}" - أجب بـ YES أو NO ثم السبب.`
-  }]}]
-});
-if (ethicsCheck.includes("NO")) throw new Error("طلب غير مقبول");
-```
-
-**الطبقة 2: الأمان (Security Gate)**
-```typescript
-// التحقق من المدخلات: SQL injection, prompt injection, XSS
-function sanitizeInput(input: string): string {
-  // تنظيف المدخلات من أي هجمات محتملة
-}
-```
-
-**الطبقة 3: الشفافية (Transparency Log)**
-```typescript
-// تسجيل كل قرار وكيل مع السياق والسبب
-await db.insert(transparencyLogTable).values({
-  agent_id, decision, reasoning, user_input, output, timestamp
-});
-```
-
----
-
-## المرحلة السادسة: التحسينات المتقدمة (مستمر)
-
-### 6.1 — الذاكرة الدلالية (pgvector)
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-ALTER TABLE agents ADD COLUMN embedding vector(1536);
--- البحث بالمعنى وليس بالكلمات المحددة
-```
-
-### 6.2 — WebSocket للتحديثات الفورية
-```typescript
-// تحديث حالة الإنتاج في الوقت الفعلي
-io.emit('production_progress', { projectId, phase, progress });
-```
-
-### 6.3 — نظام الإشعارات الذكي
-- بيليه يرسل إشعاراً عند اكتمال كل مشهد
-- تنبيه عند اكتشاف مشكلة في أي وكيل
-- تقرير يومي تلقائي
-
-### 6.4 — واجهة عرض الأصول
-- معرض الصور المولّدة لكل مشروع
-- مشغل الصوت للتعليق الصوتي المولّد
-- مشاهد فيديو مع معلومات الإنتاج
-
----
-
-## جدول الأولويات
-
-| الأولوية | المهمة | الجهد | الأثر |
-|----------|--------|-------|-------|
-| 🔴 1 | Gemini في جميع المحادثات | 1 يوم | تحويل كامل |
-| 🔴 2 | الواجهة بالعربية RTL | 1 يوم | تجربة مستخدم جذرية |
-| 🔴 3 | توليد السيناريو الحقيقي | 2 أيام | القيمة الأساسية |
-| 🟠 4 | توليد الصور (Gemini Flash) | 1 يوم | قيمة مرئية |
-| 🟠 5 | تحليل بيليه الحقيقي | 1 يوم | ذكاء إشرافي |
-| 🟠 6 | معالجة المستندات | 2 أيام | قيمة NEXUS |
-| 🟡 7 | التوليد الصوتي | 1 يوم | اكتمال الإنتاج |
-| 🟡 8 | CAEOS 3 طبقات | 2 أيام | الحوكمة |
-| 🟡 9 | WebSocket | 1 يوم | تجربة حية |
-| 🟢 10 | pgvector ذاكرة دلالية | 3 أيام | ذكاء متقدم |
-
----
-
-## المتطلبات التقنية
-
-### APIs المجانية المتاحة:
-- ✅ **Gemini Flash** — عبر Replit AI Integrations (مجاني)
-- ✅ **Gemini Flash Image** — توليد صور (مجاني)
-- ✅ **HuggingFace Inference API** — Kokoro TTS، MusicGen (مجاني بحد)
-- ✅ **FFmpeg** — تجميع الفيديو (مجاني ومفتوح المصدر)
-
-### APIs تتطلب مفتاح:
-- 💰 **Replicate API** — FLUX Pro، Wan Video (مدفوع)
-- 💰 **Fal.ai** — توليد فيديو (مدفوع لكن رخيص)
-- 💰 **ElevenLabs** — TTS عالي الجودة (نسخة مجانية محدودة)
-- 💰 **Tavily** — بحث ويب (نسخة مجانية متاحة)
-
----
-
-## مقياس النجاح
-
-النظام يُعتبر "حقيقياً" عندما:
-
-1. ✅ يمكن إدخال فكرة فيلم بالعربية → الحصول على سيناريو كامل خلال دقيقتين
-2. ✅ يمكن توليد صورة لأي مشهد بضغطة زر وعرضها في الواجهة
-3. ✅ يمكن محادثة أي وكيل وإدراك أنه يفهم ويفكر حقاً
-4. ✅ بيليه يقدم تحليلاً مختلفاً في كل مرة بناءً على بيانات حقيقية
-5. ✅ الواجهة كلها بالعربية مع RTL صحيح
-
----
-
-*— خطة التطوير الرسمية، بيليه المشرف الأعلى، مايو 2026*
+*آخر تحديث: يونيو 2026 — تم تنفيذ المرحلة الأولى كاملة*

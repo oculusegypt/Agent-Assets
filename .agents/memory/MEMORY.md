@@ -5,3 +5,4 @@
 - [ACIS API patterns](acis-api-patterns.md) — DELETE endpoints for conversations/projects added; recover-stuck-jobs runs on startup; conversations now use callAIForTask+getAgentTaskType instead of legacy callAI.
 - [ACIS Major Improvements](acis-improvements.md) — SSE streaming added (conversations + billie), analytics+token-quotas endpoints added, react-markdown installed, Recharts charts in dashboard, 6 production templates, assets_generated fixed.
 - [ACIS Session 3 Improvements](acis-session3.md) — settings safeJson fix, Sonner toasts on all mutations, Global Cmd+K palette (command-palette.tsx), keyboard shortcuts ⌘1-9, /api/system/search endpoint, ⌘K button in layout sidebar footer.
+- [ACIS Electron Build](acis-electron.md) — Electron package in artifacts/electron/; vite.config.ts PORT/BASE_PATH only required in dev (isBuild guard added); SERVE_STATIC=1 mode in api-server serves built frontend; AppImage built successfully at 107MB.

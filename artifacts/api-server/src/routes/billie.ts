@@ -48,7 +48,43 @@ router.get("/status", async (_req, res) => {
   });
 });
 
-router.get("/news", (_req, res) => res.json(AI_NEWS));
+let dynamicNewsCache: typeof AI_NEWS = [];
+let newsCacheTime = 0;
+const NEWS_CACHE_TTL = 30 * 60 * 1000;
+
+function getCurrentNews() {
+  if (dynamicNewsCache.length > 0 && Date.now() - newsCacheTime < NEWS_CACHE_TTL) return dynamicNewsCache;
+  return AI_NEWS;
+}
+
+router.get("/news", (_req, res) => res.json(getCurrentNews()));
+
+router.post("/refresh-news", async (_req, res) => {
+  try {
+    const systemPrompt = `أنت بيليه، المشرف العام لنظام ACIS السينمائي.
+مهمتك: توليد 6 أخبار حديثة ومبتكرة عن مجال الذكاء الاصطناعي والإنتاج السينمائي الذكي.
+الأخبار يجب أن تكون متنوعة: نماذج لغوية، توليد فيديو وصور وصوت، أدوات إبداعية.
+أجب بـ JSON فقط بدون أي نص إضافي:
+[{"id":"g1","title":"English headline","titleAr":"العنوان بالعربية","summary":"ملخص الخبر بالعربية","source":"اسم المصدر","url":"https://example.com","category":"language-models","impact":"التأثير على ACIS"}]`;
+    const result = await callAIForTask("text_fast", systemPrompt,
+      `اليوم: ${new Date().toLocaleDateString("ar-SA")}. ولّد 6 أخبار ذكاء اصطناعي حديثة.`
+    );
+    const rawText = result.text.trim();
+    const jsonMatch = rawText.match(/\[[\s\S]+\]/);
+    if (!jsonMatch) throw new Error("لم يُعثر على JSON صالح");
+    const generated = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(generated) || generated.length === 0) throw new Error("نتيجة فارغة");
+    const now = Date.now();
+    dynamicNewsCache = generated.map((item: any, i: number) => ({
+      ...item, id: `g${now}_${i}`, published_at: new Date(now - i * 3600000).toISOString(), generated: true,
+    }));
+    newsCacheTime = now;
+    broadcast("news_updated");
+    res.json({ success: true, count: dynamicNewsCache.length, news: dynamicNewsCache });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "فشل توليد الأخبار", news: AI_NEWS });
+  }
+});
 
 router.post("/chat", async (req, res) => {
   const { message, history = [] } = req.body;

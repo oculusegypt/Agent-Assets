@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -10,9 +10,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Shield, Layers, GitBranch, Lock, Database, Network,
   Cpu, AlertTriangle, CheckCircle2, Eye,
-  Scale, Wrench, Globe, Zap, Brain, Server, Play, Clock, X,
+  Scale, Wrench, Globe, Zap, Brain, Server, Play, Clock, X, RefreshCw,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
 const SOVEREIGN_LAYERS = [
   { id: 1,  name: "الإطار الدستوري",          nameEn: "Constitutional Framework",  icon: Scale,         color: "text-amber-400",   desc: "المبادئ الأخلاقية الأساسية والحقوق والالتزامات وميثاق الحوكمة الذي يحكم جميع سلوكيات الذكاء الاصطناعي." },
@@ -41,6 +43,16 @@ const PHASE_PIPELINE = [
   "تقرير أصحاب المصلحة", "اكتمال الدورة",
 ];
 
+type CaeosScore = {
+  ethical_compliance: number; risk_score: number; active_layers: number;
+  total_layers: number; pipeline_throughput: number; active_alerts: number;
+  caeos_agents_online: number; caeos_agents_busy: number; caeos_agents_total: number;
+};
+type LayerStatus = { id: number; name: string; nameEn: string; weight: number;
+  status: "active" | "monitoring" | "standby"; health: number;
+  agent_id: string | null; agent_name: string | null; executions_today: number;
+};
+
 export default function CaeosPage() {
   const { data: allAgents, isLoading: agentsLoading } = useListAgents();
   const { data: alerts } = useGetBillieAlerts();
@@ -54,21 +66,41 @@ export default function CaeosPage() {
   const [ethicsRunning, setEthicsRunning] = useState(false);
   const [ethicsResult, setEthicsResult] = useState<string | null>(null);
   const [showEthicsModal, setShowEthicsModal] = useState(false);
+  const [caeosScore, setCaeosScore] = useState<CaeosScore | null>(null);
+  const [layerStatuses, setLayerStatuses] = useState<LayerStatus[]>([]);
+  const [scoreLoading, setScoreLoading] = useState(false);
+
+  async function loadCaeosData() {
+    setScoreLoading(true);
+    try {
+      const [r1, r2] = await Promise.all([
+        fetch(`${BASE}/api/caeos/score`),
+        fetch(`${BASE}/api/caeos/layers`),
+      ]);
+      if (r1.ok) setCaeosScore(await r1.json());
+      if (r2.ok) { const d = await r2.json(); setLayerStatuses(d.layers ?? []); }
+    } catch {}
+    setScoreLoading(false);
+  }
+
+  useEffect(() => { loadCaeosData(); }, []);
 
   const caeos = allAgents?.filter(a => a.system === "CAEOS") ?? [];
   const layerData = activeLayer != null ? SOVEREIGN_LAYERS[activeLayer - 1] : null;
+  const layerApiData = activeLayer != null ? layerStatuses.find(l => l.id === activeLayer) : null;
 
   const onlineCaeos  = caeos.filter(a => a.status === "online").length;
   const busyCaeos    = caeos.filter(a => a.status === "busy").length;
   const totalExecsToday = caeos.reduce((s, a) => s + (a.executions_today || 0), 0);
   const activeAlerts = alerts?.filter(a => !a.resolved).length ?? 0;
 
-  const ethicalCompliance = caeos.length > 0
-    ? Math.min(100, Math.round(((onlineCaeos + busyCaeos) / caeos.length) * 100 * 0.95 + 4.8))
-    : 100;
-  const avgRiskScore = activeAlerts === 0 ? 1.2 : Math.min(9.9, Math.round(activeAlerts * 1.8 * 10) / 10);
-  const pipelineThroughput = metrics?.total_executions_today ?? totalExecsToday;
-  const layerHealth = caeos.length > 0 ? Math.round((onlineCaeos + busyCaeos) / caeos.length * 15) : 15;
+  const ethicalCompliance = caeosScore?.ethical_compliance
+    ?? (caeos.length > 0 ? Math.min(100, Math.round(((onlineCaeos + busyCaeos) / caeos.length) * 100 * 0.95 + 4.8)) : 100);
+  const avgRiskScore = caeosScore?.risk_score
+    ?? (activeAlerts === 0 ? 1.2 : Math.min(9.9, Math.round(activeAlerts * 1.8 * 10) / 10));
+  const pipelineThroughput = caeosScore?.pipeline_throughput ?? metrics?.total_executions_today ?? totalExecsToday;
+  const layerHealth = caeosScore?.active_layers
+    ?? (caeos.length > 0 ? Math.round((onlineCaeos + busyCaeos) / caeos.length * 15) : 15);
 
   async function handleEthicsAnalysis() {
     if (!ethicsInput.trim()) return;
@@ -76,26 +108,18 @@ export default function CaeosPage() {
     setEthicsResult(null);
     const tid = toast.loading("CAEOS يُحلّل عبر 15 طبقة سيادية…");
     try {
-      const res = await executeAgent.mutateAsync({
-        agentId: "caeos-master",
-        data: {
-          action: "تحليل أخلاقي شامل",
-          prompt: `أجرِ تحليلاً أخلاقياً شاملاً للمحتوى أو الموقف التالي من منظور نظام CAEOS الدستوري:
-
-${ethicsInput}
-
-قيّم عبر:
-1. المبادئ الدستورية (هل يلتزم بالمبادئ الـ15؟)
-2. التحليل الأخلاقي متعدد الأطر (نفعي، واجبي، إسلامي)
-3. تقييم المخاطر (1-10) مع الأدلة
-4. الحكم النهائي (مقبول / مقبول مشروط / مرفوض)
-5. التوصيات والبدائل المقترحة`,
-        },
+      const res = await fetch(`${BASE}/api/caeos/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: ethicsInput }),
       });
-      setEthicsResult(res?.result ?? "اكتمل التحليل.");
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setEthicsResult(data.result ?? "اكتمل التحليل.");
       setShowEthicsModal(true);
       qc.invalidateQueries();
-      toast.success("اكتمل التحليل الأخلاقي ✓", { id: tid });
+      loadCaeosData();
+      toast.success(`اكتمل التحليل عبر ${data.layers_checked ?? 15} طبقة ✓`, { id: tid });
     } catch (e: any) {
       setEthicsResult(`خطأ: ${e?.message}`);
       setShowEthicsModal(true);
@@ -122,9 +146,19 @@ ${ethicsInput}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 text-xs font-mono text-orange-400">
-          <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
-          CAEOS نشط
+        <div className="flex items-center gap-3">
+          <button
+            onClick={loadCaeosData}
+            disabled={scoreLoading}
+            className="p-1.5 rounded border border-orange-500/20 hover:border-orange-500/40 hover:bg-orange-500/5 transition-colors text-orange-400/60 hover:text-orange-400 disabled:opacity-40"
+            title="تحديث بيانات CAEOS"
+          >
+            <RefreshCw size={12} className={scoreLoading ? "animate-spin" : ""} />
+          </button>
+          <div className="flex items-center gap-2 text-xs font-mono text-orange-400">
+            <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+            CAEOS نشط
+          </div>
         </div>
       </div>
 
@@ -160,6 +194,10 @@ ${ethicsInput}
             {SOVEREIGN_LAYERS.map(layer => {
               const Icon = layer.icon;
               const isActive = activeLayer === layer.id;
+              const apiLayer = layerStatuses.find(l => l.id === layer.id);
+              const health = apiLayer?.health ?? 95;
+              const status = apiLayer?.status ?? "active";
+              const healthDot = status === "active" ? "bg-emerald-500" : status === "monitoring" ? "bg-amber-400 animate-pulse" : "bg-muted-foreground";
               return (
                 <button key={layer.id} onClick={() => setActiveLayer(isActive ? null : layer.id)}
                   className={`p-3 rounded border text-right transition-all group ${
@@ -168,12 +206,23 @@ ${ethicsInput}
                       : "border-border/50 bg-card hover:border-orange-500/20 hover:bg-orange-500/5"
                   }`}>
                   <div className="flex items-center gap-2 mb-1 justify-end">
-                    <span className="text-[10px] font-mono text-muted-foreground">L{String(layer.id).padStart(2, "0")}</span>
+                    <div className="flex items-center gap-1">
+                      <div className={`w-1.5 h-1.5 rounded-full ${healthDot}`} title={`${health}%`} />
+                      <span className="text-[10px] font-mono text-muted-foreground">L{String(layer.id).padStart(2, "0")}</span>
+                    </div>
                     <div className="w-6 h-6 rounded flex items-center justify-center bg-secondary shrink-0">
                       <Icon size={12} className={layer.color} />
                     </div>
                   </div>
                   <div className="text-xs font-bold">{layer.name}</div>
+                  {apiLayer && (
+                    <div className="mt-1 h-0.5 bg-secondary rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${health >= 90 ? "bg-emerald-500" : health >= 75 ? "bg-amber-400" : "bg-red-400"}`}
+                        style={{ width: `${health}%` }}
+                      />
+                    </div>
+                  )}
                 </button>
               );
             })}

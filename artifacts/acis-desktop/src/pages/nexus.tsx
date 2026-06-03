@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  useListNexusTasks, useGetNexusSummary, useListAgents, useCreateNexusTask,
+  useListNexusTasks, useGetNexusSummary, useCreateNexusTask,
 } from "@workspace/api-client-react";
 import {
   useGetNexusTemplates, useGetNexusTask, useDeleteNexusTask,
@@ -17,9 +17,11 @@ import {
   Building2, FileText, BarChart3, Presentation, Mail,
   CalendarDays, BookOpen, Search, Workflow, Users,
   CheckCircle2, Clock, AlertCircle, TrendingUp, Brain,
-  Plus, X, Trash2, Layers, Kanban,
+  Plus, X, Trash2, Layers, Kanban, GripVertical,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
 const TASK_TYPE_ICONS: Record<string, any> = {
   document: FileText, spreadsheet: BarChart3, presentation: Presentation,
@@ -96,6 +98,37 @@ export default function NexusPage() {
   const [tab, setTab] = useState<"kanban" | "new" | "templates" | "analytics">("kanban");
   const [form, setForm] = useState({ title: "", description: "", type: "document", priority: "medium" });
   const [viewTaskId, setViewTaskId] = useState<string | null>(null);
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
+  const dragSrcStatus = useRef<string | null>(null);
+
+  const handleDragStart = useCallback((e: React.DragEvent, taskId: string, status: string) => {
+    setDraggedTaskId(taskId);
+    dragSrcStatus.current = status;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", taskId);
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent, newStatus: string) => {
+    e.preventDefault();
+    setDragOverCol(null);
+    const taskId = e.dataTransfer.getData("text/plain") || draggedTaskId;
+    setDraggedTaskId(null);
+    if (!taskId || dragSrcStatus.current === newStatus) return;
+    try {
+      const res = await fetch(`${BASE}/api/nexus/tasks/${taskId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      qc.invalidateQueries();
+      toast.success(`نُقلت المهمة إلى "${newStatus === "completed" ? "مكتمل" : newStatus === "running" ? "جارٍ" : newStatus === "failed" ? "فشل" : "منتظر"}"`);
+    } catch {
+      toast.error("فشل تحريك المهمة");
+    }
+    dragSrcStatus.current = null;
+  }, [draggedTaskId, qc]);
 
   const completedTasks = tasks?.filter(t => t.status === "completed").length ?? 0;
   const runningTasks   = tasks?.filter(t => t.status === "running").length ?? 0;
@@ -215,10 +248,20 @@ export default function NexusPage() {
               {KANBAN_COLS.map(col => {
                 const colTasks = tasks.filter(t => t.status === col.key);
                 const ColIcon = col.icon;
+                const isDropTarget = dragOverCol === col.key && dragSrcStatus.current !== col.key;
                 return (
-                  <div key={col.key} className={`rounded-xl border ${col.border} ${col.bg} flex flex-col min-h-[200px]`}>
+                  <div key={col.key}
+                    className={`rounded-xl border flex flex-col min-h-[200px] transition-all ${col.bg} ${
+                      isDropTarget
+                        ? "border-emerald-400/60 ring-1 ring-emerald-400/30 scale-[1.01]"
+                        : col.border
+                    }`}
+                    onDragOver={e => { e.preventDefault(); setDragOverCol(col.key); }}
+                    onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverCol(null); }}
+                    onDrop={e => handleDrop(e, col.key)}
+                  >
                     {/* Column Header */}
-                    <div className={`flex items-center justify-between px-3 py-2.5 border-b ${col.border}`}>
+                    <div className={`flex items-center justify-between px-3 py-2.5 border-b ${isDropTarget ? "border-emerald-400/40" : col.border}`}>
                       <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded-full border ${STATUS_STYLES[col.key]} shrink-0`}>
                         {colTasks.length}
                       </span>
@@ -227,25 +270,40 @@ export default function NexusPage() {
                         <ColIcon size={14} className={col.key === "running" ? "animate-pulse" : ""} />
                       </div>
                     </div>
+                    {/* Drop hint */}
+                    {isDropTarget && (
+                      <div className="mx-2 mt-2 p-2 rounded border-2 border-dashed border-emerald-400/40 text-center text-[10px] text-emerald-400/60 font-mono">
+                        أفلت هنا
+                      </div>
+                    )}
                     {/* Cards */}
                     <div className="p-2 space-y-2 flex-1">
-                      {colTasks.length === 0 ? (
+                      {colTasks.length === 0 && !isDropTarget ? (
                         <div className="text-center py-6 text-muted-foreground/30 text-xs">
                           لا توجد مهام
                         </div>
                       ) : colTasks.map(task => {
                         const Icon = TASK_TYPE_ICONS[task.type] ?? Brain;
+                        const isDragging = draggedTaskId === task.id;
                         return (
                           <div key={task.id}
-                            className="p-3 rounded-lg bg-card border border-border/40 hover:border-emerald-500/20 transition-all cursor-pointer group shadow-sm"
+                            draggable
+                            onDragStart={e => handleDragStart(e, task.id, task.status)}
+                            onDragEnd={() => { setDraggedTaskId(null); setDragOverCol(null); dragSrcStatus.current = null; }}
+                            className={`p-3 rounded-lg bg-card border border-border/40 hover:border-emerald-500/20 transition-all group shadow-sm ${
+                              isDragging ? "opacity-40 scale-95 cursor-grabbing" : "cursor-grab hover:cursor-grab"
+                            }`}
                             onClick={() => setViewTaskId(task.id)}>
-                            {/* Title row */}
+                            {/* Drag handle + Title row */}
                             <div className="flex items-start justify-between gap-2 mb-2">
-                              <button
-                                onClick={e => handleDelete(task.id, e)}
-                                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/10 hover:text-red-400 rounded text-muted-foreground/30 transition-all shrink-0">
-                                <Trash2 size={10} />
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <GripVertical size={10} className="text-muted-foreground/20 group-hover:text-muted-foreground/50 shrink-0 mt-0.5" />
+                                <button
+                                  onClick={e => handleDelete(task.id, e)}
+                                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/10 hover:text-red-400 rounded text-muted-foreground/30 transition-all shrink-0">
+                                  <Trash2 size={10} />
+                                </button>
+                              </div>
                               <div className="flex items-center gap-1.5 flex-1 justify-end">
                                 <span className="font-semibold text-xs leading-tight text-right line-clamp-2">{task.title}</span>
                                 <div className={`w-6 h-6 rounded flex items-center justify-center shrink-0 border ${STATUS_STYLES[col.key]}`}>
