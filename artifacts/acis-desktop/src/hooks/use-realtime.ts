@@ -10,6 +10,9 @@ type WsEventType =
   | "nexus_updated"
   | "conversation_updated"
   | "alerts_updated"
+  | "job_started"
+  | "job_completed"
+  | "job_failed"
   | "ping";
 
 interface WsEvent {
@@ -27,6 +30,9 @@ const EVENT_TO_QUERY_KEYS: Record<WsEventType, string[]> = {
   nexus_updated:        ["listNexusTasks", "getNexusTask"],
   conversation_updated: ["listConversations", "getConversationMessages"],
   alerts_updated:       ["getBillieAlerts", "getBillieStatus"],
+  job_started:          ["getProjectJobs", "listProjects"],
+  job_completed:        ["getProjectJobs", "listProjects", "getSystemActivity"],
+  job_failed:           ["getProjectJobs", "listProjects"],
   ping:                 [],
 };
 

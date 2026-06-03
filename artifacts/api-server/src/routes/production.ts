@@ -163,6 +163,12 @@ router.post("/projects/:projectId/generate", async (req, res) => {
 
   broadcast("project_updated", { projectId, phase: safePhase, status: "running" });
   broadcast("activity_updated");
+  broadcast("job_started", {
+    jobId,
+    phase: safePhase,
+    projectName: project.titleAr || project.title,
+    projectId,
+  });
 
   res.json({
     job_id: jobId, phase: safePhase, status: "running",
@@ -385,6 +391,16 @@ ${phaseContextParts.length > 0 ? `مخرجات المراحل المكتملة:\
         description: `المشروع: ${title} | ${aiResult.length} حرف من المحتوى`,
       });
 
+      broadcast("job_completed", {
+        jobId,
+        phase: safePhase,
+        projectName: title,
+        projectId,
+        resultLength: aiResult.length,
+      });
+      broadcast("project_updated", { projectId, phase: safePhase, status: "completed" });
+      broadcast("activity_updated");
+
     } catch (err: any) {
       console.error(`[إنتاج] خطأ في التوليد لـ ${safePhase}:`, err?.message);
       await db.update(generationJobsTable).set({
@@ -392,6 +408,14 @@ ${phaseContextParts.length > 0 ? `مخرجات المراحل المكتملة:\
         result: `خطأ: ${err?.message || "فشل التوليد"}`,
         completed_at: new Date(),
       }).where(eq(generationJobsTable.id, jobId));
+
+      broadcast("job_failed", {
+        jobId,
+        phase: safePhase,
+        projectId,
+        error: (err as any)?.message?.slice(0, 200) || "فشل التوليد",
+      });
+      broadcast("activity_updated");
     }
   });
 });

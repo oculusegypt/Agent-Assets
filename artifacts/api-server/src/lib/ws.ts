@@ -10,6 +10,9 @@ export type WsEventType =
   | "nexus_updated"
   | "conversation_updated"
   | "alerts_updated"
+  | "job_started"
+  | "job_completed"
+  | "job_failed"
   | "ping";
 
 export interface WsEvent {

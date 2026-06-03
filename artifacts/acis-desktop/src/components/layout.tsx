@@ -2,10 +2,12 @@ import { Link, useLocation } from "wouter";
 import {
   Activity, BrainCircuit, MonitorPlay, MessageSquare,
   Film, Building2, Shield, Cpu, ChevronLeft, Settings2, Archive,
+  Crosshair,
 } from "lucide-react";
 import { useGetSystemMetrics } from "@workspace/api-client-react";
 import { useUI } from "../contexts/ui-settings";
 import { NotificationsPanel } from "./notifications-panel";
+import { useRunningJobsCount } from "../hooks/use-ws-notifications";
 
 const NAV_SECTIONS = [
   {
@@ -14,6 +16,7 @@ const NAV_SECTIONS = [
     items: [
       { href: "/", label: "العمليات", labelEn: "Operations", icon: Activity, sub: "لوحة التحكم" },
       { href: "/billie", label: "بيليه", labelEn: "Billie", icon: BrainCircuit, sub: "المشرف الأعلى" },
+      { href: "/mission-control", label: "مركز التحكم", labelEn: "Mission Control", icon: Crosshair, sub: "جميع المهام الجارية", badge: true },
     ],
   },
   {
@@ -21,7 +24,7 @@ const NAV_SECTIONS = [
     labelEn: "AI SYSTEMS",
     items: [
       { href: "/acis", label: "ACIS السينمائي", labelEn: "ACIS Cinematic", icon: MonitorPlay, sub: "الإنتاج الفني" },
-      { href: "/production", label: "من القصة للرؤية", labelEn: "Storyboard → Vision", icon: Film, sub: "خط الإنتاج" },
+      { href: "/production", label: "من القصة للرؤية", labelEn: "Storyboard → Vision", icon: Film, sub: "خط الإنتاج", badge: true },
       { href: "/nexus", label: "نيكسوس المكتبي", labelEn: "NEXUS Office OS", icon: Building2, sub: "الذكاء المؤسسي" },
       { href: "/caeos", label: "كايوس / سيرفكس", labelEn: "CAEOS / SERVX", icon: Shield, sub: "الذكاء الدستوري" },
     ],
@@ -47,6 +50,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { data: metrics } = useGetSystemMetrics();
   const { sidebarCompact } = useUI();
+  const runningCount = useRunningJobsCount();
 
   const healthScore = metrics?.system_health ?? 94;
   const healthColor = healthScore >= 90 ? "text-emerald-400" : healthScore >= 70 ? "text-amber-400" : "text-red-400";
@@ -92,12 +96,26 @@ export function Layout({ children }: { children: React.ReactNode }) {
                             : "text-muted-foreground border-transparent hover:bg-secondary hover:text-foreground hover:border-border/50"
                         }`}
                       >
-                        <item.icon size={15} className={`shrink-0 ${active ? "text-primary" : "group-hover:text-foreground"}`} />
+                        <div className="relative shrink-0">
+                          <item.icon size={15} className={active ? "text-primary" : "group-hover:text-foreground"} />
+                          {(item as any).badge && runningCount > 0 && (
+                            <span className="absolute -top-1.5 -left-1.5 w-3.5 h-3.5 rounded-full bg-primary text-[8px] font-bold text-primary-foreground flex items-center justify-center animate-pulse">
+                              {runningCount > 9 ? "9+" : runningCount}
+                            </span>
+                          )}
+                        </div>
                         {!sidebarCompact && (
                           <>
                             {active && <ChevronLeft size={10} className="text-primary/50 shrink-0 -mr-1" />}
                             <div className="flex-1 min-w-0 text-right">
-                              <div className="text-xs font-semibold truncate">{item.label}</div>
+                              <div className="flex items-center gap-1.5 justify-end">
+                                <div className="text-xs font-semibold truncate">{item.label}</div>
+                                {(item as any).badge && runningCount > 0 && (
+                                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary/20 text-primary text-[9px] font-bold border border-primary/30">
+                                    {runningCount}
+                                  </span>
+                                )}
+                              </div>
                               <div className={`text-[10px] font-mono truncate ${active ? "text-primary/60" : "text-muted-foreground/50"}`}>
                                 {item.sub}
                               </div>
@@ -140,7 +158,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <kbd className="bg-secondary border border-border/40 px-1 py-0.5 rounded text-[9px]">⌘K</kbd>
               </button>
               <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground justify-end">
-                <span className="opacity-40">v3.0</span>
+                <span className="opacity-40">v4.0</span>
                 <span className="ml-auto">النظام سليم</span>
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               </div>
