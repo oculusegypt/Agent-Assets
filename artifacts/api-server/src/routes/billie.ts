@@ -1,0 +1,1126 @@
+import { Router } from "express";
+import { db } from "@workspace/db";
+import { agentsTable, systemAlertsTable, complaintsTable, activityTable, agentPatchesTable } from "@workspace/db";
+import { eq, desc } from "drizzle-orm";
+import { randomUUID } from "crypto";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs";
+import { resolve, join, dirname } from "path";
+import { callAIForTask, callAIForTaskStream, callGeminiTTS, callGeminiImageGen, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
+import { saveTtsAudio, saveImageFile, extractTtsScript } from "../lib/media.js";
+import { broadcast } from "../lib/ws.js";
+
+const router = Router();
+
+const AI_NEWS = [
+  { id: "n1",  title: "Google Gemini 2.5 Ultra Sets New Records", titleAr: "جوجل جيميناي 2.5 ألترا يحطم أرقاماً قياسية جديدة في الاستدلال متعدد الوسائط", summary: "نموذج Gemini 2.5 Ultra يحقق 92.3% في MMLU-Pro، متجاوزاً جميع النماذج السابقة في الاستدلال المعقد وفهم اللغة العربية.", source: "Google DeepMind", url: "https://deepmind.google", category: "language-models", published_at: new Date(Date.now() - 3600000).toISOString(), impact: "تحسين محتمل في جودة استجابات الوكلاء العربية بنسبة 15-20%" },
+  { id: "n2",  title: "Wan Video 3.0 Generates 4K Cinematic Footage", titleAr: "وان فيديو 3.0 يولّد لقطات سينمائية 4K من نصوص بشكل مباشر", summary: "أليبابا تُطلق Wan Video 3.0 بدعم دقة 4K و120fps وتحسين جذري في الاتساق الزمني لصناعة الأفلام بالذكاء الاصطناعي.", source: "Alibaba Research", url: "https://arxiv.org", category: "video", published_at: new Date(Date.now() - 7200000).toISOString(), impact: "رفع جودة التوليد في مرحلة الفيديو لمشاريع ACIS" },
+  { id: "n3",  title: "FLUX.1 Pro Ultra: New Photorealistic Standard", titleAr: "فلاكس 1 برو ألترا: المعيار الجديد لتوليد الصور الفوتوواقعية", summary: "Black Forest Labs تُطلق FLUX.1 Pro Ultra بدقة مضاعفة والتوليد خلال 3 ثوانٍ.", source: "Black Forest Labs", url: "https://blackforestlabs.ai", category: "image", published_at: new Date(Date.now() - 10800000).toISOString(), impact: "تحسين مرحلة توليد الصور في خط الإنتاج السينمائي" },
+  { id: "n4",  title: "Kokoro TTS v2.0 Achieves Human-Level Arabic Voice", titleAr: "كوكورو TTS 2.0 يحقق تركيب صوت عربي بمستوى بشري", summary: "Kokoro TTS 2.0 بدعم كامل للهجات العربية يحقق MOS Score 4.8/5.0.", source: "HuggingFace Blog", url: "https://huggingface.co", category: "audio", published_at: new Date(Date.now() - 14400000).toISOString(), impact: "تحسين جودة التعليق الصوتي العربي في مشاريع ACIS بشكل كبير" },
+  { id: "n5",  title: "Claude Opus 4: 2M Context + Autonomous Agents", titleAr: "كلود أوبس 4: نافذة سياق 2 مليون رمز وقدرات وكيل مستقلة", summary: "Anthropic تُطلق Claude Opus 4 مع نافذة سياق 2M رمز واستخدام أدوات مدمج.", source: "Anthropic", url: "https://anthropic.com", category: "language-models", published_at: new Date(Date.now() - 18000000).toISOString(), impact: "نموذج بديل محتمل للمهام التحليلية طويلة المدى" },
+  { id: "n6",  title: "MusicGen 3.0 Composes Full Orchestral Scores", titleAr: "ميوزيك جن 3.0 يؤلف موسيقى أوركسترالية كاملة مع تحكم عاطفي", summary: "Meta AI تُطلق MusicGen 3.0 لتوليد موسيقى أوركسترالية كاملة مع تحكم دقيق في المزاج والإيقاع.", source: "Meta AI Research", url: "https://ai.meta.com", category: "audio", published_at: new Date(Date.now() - 21600000).toISOString(), impact: "تعزيز قدرة وكيل الصوت والموسيقى في ACIS" },
+  { id: "n7",  title: "Runway Gen-4: Real-Time AI Video Editing", titleAr: "رانواي جن-4 يقدم تحرير الفيديو الفوري بالذكاء الاصطناعي", summary: "Runway Gen-4 يتيح تحرير الفيديو في الوقت الفعلي ونقل الحركة واتساق الشخصيات.", source: "Runway ML", url: "https://runwayml.com", category: "video", published_at: new Date(Date.now() - 25200000).toISOString(), impact: "تحسين مرحلة ما بعد الإنتاج في مشاريع StoryboardToVision" },
+  { id: "n8",  title: "OpenAI Sora v2: 10-Minute Videos with Perfect Continuity", titleAr: "سورا v2: مقاطع فيديو 10 دقائق مع اتساق مثالي للشخصيات", summary: "OpenAI تُطلق Sora v2 مع دعم مقاطع تصل إلى 10 دقائق مع هوية شخصيات مستمرة.", source: "OpenAI", url: "https://openai.com/sora", category: "video", published_at: new Date(Date.now() - 28800000).toISOString(), impact: "خيار مميّز لإنتاج الأفلام الطويلة بالذكاء الاصطناعي" },
+  { id: "n9",  title: "Qwen 3.0 72B Tops Arabic NLP Leaderboard", titleAr: "كوين 3.0 72B يتصدر قائمة معالجة اللغة العربية بفارق كبير", summary: "Qwen 3.0 72B يحقق أداء متصدراً في جميع معايير NLP العربية مع دقة 96%.", source: "Alibaba DAMO", url: "https://qwenlm.github.io", category: "language-models", published_at: new Date(Date.now() - 32400000).toISOString(), impact: "النموذج الاحتياطي الأقوى حالياً لمعالجة اللغة العربية في ACIS" },
+  { id: "n10", title: "LangGraph v2: Persistent Multi-Agent Memory", titleAr: "لانغ جراف v2 يتيح الذاكرة المستمرة متعددة الوكلاء عبر الجلسات", summary: "LangChain تُطلق LangGraph v2 مع ذاكرة حالة مستمرة وتواصل مباشر بين الوكلاء.", source: "LangChain Blog", url: "https://langchain.com", category: "ai", published_at: new Date(Date.now() - 36000000).toISOString(), impact: "تقنية ذات صلة مباشرة بتطوير منظومة ACIS متعددة الوكلاء" },
+];
+
+router.get("/status", async (_req, res) => {
+  const agents = await db.select().from(agentsTable);
+  const alerts = await db.select().from(systemAlertsTable).where(eq(systemAlertsTable.resolved, false));
+  const complaints = await db.select().from(complaintsTable).where(eq(complaintsTable.status, "open"));
+
+  const online = agents.filter(a => a.status === "online").length;
+  const healthScore = Math.min(100, (online / Math.max(agents.length, 1)) * 100 * 0.7 + (100 - Math.min(alerts.length * 5, 30)));
+
+  res.json({
+    status: alerts.length > 3 ? "analyzing" : "active",
+    agents_monitored: agents.length,
+    alerts_active: alerts.length,
+    issues_resolved_today: complaints.filter(c => c.status === "resolved").length,
+    system_health_score: Math.round(healthScore),
+    last_analysis: new Date(Date.now() - 300000).toISOString(),
+    uptime_hours: 72,
+    news_last_updated: new Date(Date.now() - 120000).toISOString(),
+    current_focus: alerts.length > 0
+      ? `يُحقق في: ${alerts[0]?.title || "أداء النظام"}`
+      : "يراقب جميع الوكلاء — النظام مستقر",
+    recommendations: [],
+  });
+});
+
+let dynamicNewsCache: typeof AI_NEWS = [];
+let newsCacheTime = 0;
+const NEWS_CACHE_TTL = 30 * 60 * 1000;
+
+function getCurrentNews() {
+  if (dynamicNewsCache.length > 0 && Date.now() - newsCacheTime < NEWS_CACHE_TTL) return dynamicNewsCache;
+  return AI_NEWS;
+}
+
+router.get("/news", (_req, res) => res.json(getCurrentNews()));
+
+router.post("/refresh-news", async (_req, res) => {
+  try {
+    const systemPrompt = `أنت بيليه، المشرف العام لنظام ACIS السينمائي.
+مهمتك: توليد 6 أخبار حديثة ومبتكرة عن مجال الذكاء الاصطناعي والإنتاج السينمائي الذكي.
+الأخبار يجب أن تكون متنوعة: نماذج لغوية، توليد فيديو وصور وصوت، أدوات إبداعية.
+أجب بـ JSON فقط بدون أي نص إضافي:
+[{"id":"g1","title":"English headline","titleAr":"العنوان بالعربية","summary":"ملخص الخبر بالعربية","source":"اسم المصدر","url":"https://example.com","category":"language-models","impact":"التأثير على ACIS"}]`;
+    const result = await callAIForTask("text_simple", systemPrompt,
+      `اليوم: ${new Date().toLocaleDateString("ar-SA")}. ولّد 6 أخبار ذكاء اصطناعي حديثة.`
+    );
+    const rawText = result.text.trim();
+    const jsonMatch = rawText.match(/\[[\s\S]+\]/);
+    if (!jsonMatch) throw new Error("لم يُعثر على JSON صالح");
+    const generated = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(generated) || generated.length === 0) throw new Error("نتيجة فارغة");
+    const now = Date.now();
+    dynamicNewsCache = generated.map((item: any, i: number) => ({
+      ...item, id: `g${now}_${i}`, published_at: new Date(now - i * 3600000).toISOString(), generated: true,
+    }));
+    newsCacheTime = now;
+    broadcast("news_updated");
+    res.json({ success: true, count: dynamicNewsCache.length, news: dynamicNewsCache });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "فشل توليد الأخبار", news: AI_NEWS });
+  }
+});
+
+router.post("/chat", async (req, res) => {
+  const { message, history = [] } = req.body;
+  if (!message?.trim()) return res.status(400).json({ error: "الرسالة مطلوبة" });
+
+  const agents = await db.select().from(agentsTable);
+  const alerts = await db.select().from(systemAlertsTable).where(eq(systemAlertsTable.resolved, false));
+  const complaints = await db.select().from(complaintsTable);
+  const online = agents.filter(a => a.status === "online").length;
+  const healthScore = Math.min(100, (online / Math.max(agents.length, 1)) * 100 * 0.7 + (100 - Math.min(alerts.length * 5, 30)));
+
+  const systemContext = `
+السياق الحالي للنظام (${new Date().toLocaleString("ar-SA")}):
+• الوكلاء: ${agents.length} إجمالي، ${online} متصل، ${agents.filter(a => a.status === "busy").length} مشغول
+• التنبيهات النشطة: ${alerts.length} (${alerts.slice(0,2).map(a => a.title).join(" | ") || "لا يوجد"})
+• الشكاوى المفتوحة: ${complaints.filter(c => c.status === "open" || c.status === "investigating").length}
+• صحة النظام: ${Math.round(healthScore)}%
+`;
+
+  const billiePrompt = AGENT_SYSTEM_PROMPTS["billie"] + `
+
+أنت بيليه، المشرفة العليا على نظام ACIS متعدد الوكلاء. أنت تتحدثين مع القائد مباشرةً.
+ردودك:
+- بالعربية الفصحى الواضحة
+- مختصرة وذكية (3-6 جمل عادةً، إلا إذا طُلب تقرير مفصل)
+- احترافية ودية في آن واحد
+- تعتمدين على بيانات النظام الفعلية أدناه
+
+${systemContext}`;
+
+  try {
+    const msgs = history.slice(-6).map((h: any) => ({
+      role: (h.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
+      content: h.text || h.content || "",
+    }));
+    const result = await callAIForTask("text_complex", billiePrompt, message, { history: msgs });
+
+    await db.insert(activityTable).values({
+      id: randomUUID(), type: "billie_alert",
+      title: "محادثة مع بيليه",
+      description: message.substring(0, 100),
+    });
+
+    res.json({
+      reply: result.text,
+      model: result.model,
+      tokens: result.tokens,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    console.error("[بيليه شات] خطأ:", err?.message);
+    res.status(500).json({ error: "فشل في الحصول على رد بيليه — تحقق من مفاتيح API", detail: err?.message });
+  }
+});
+
+router.post("/news/analyze", async (req, res) => {
+  const { topic } = req.body;
+  try {
+    const r = await callAIForTask(
+      "text_complex",
+      AGENT_SYSTEM_PROMPTS["billie"],
+      `حلّل أهمية أحدث التطورات في مجال الذكاء الاصطناعي لعام 2026 على نظام ACIS متعدد الوكلاء.
+${topic ? `ركّز على موضوع: ${topic}` : ""}
+قدّم: أهم 3 تطورات، تأثيرها على النظام، وتوصيات للاستفادة منها.`
+    );
+    res.json({ analysis: r.text, model: r.model, generated_at: new Date().toISOString() });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message });
+  }
+});
+
+// ── Streaming chat (SSE) ──────────────────────────────────────
+router.post("/stream", async (req, res) => {
+  const { message, history = [] } = req.body;
+  if (!message?.trim()) return res.status(400).json({ error: "الرسالة مطلوبة" });
+
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+
+  const send = (data: object) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+
+  try {
+    const agents = await db.select().from(agentsTable);
+    const alerts = await db.select().from(systemAlertsTable).where(eq(systemAlertsTable.resolved, false));
+    const complaints = await db.select().from(complaintsTable);
+    const online = agents.filter(a => a.status === "online").length;
+    const healthScore = Math.min(100, (online / Math.max(agents.length, 1)) * 100 * 0.7 + (100 - Math.min(alerts.length * 5, 30)));
+
+    const systemContext = `
+السياق الحالي للنظام (${new Date().toLocaleString("ar-SA")}):
+• الوكلاء: ${agents.length} إجمالي، ${online} متصل، ${agents.filter(a => a.status === "busy").length} مشغول
+• التنبيهات النشطة: ${alerts.length} (${alerts.slice(0,2).map(a => a.title).join(" | ") || "لا يوجد"})
+• الشكاوى المفتوحة: ${complaints.filter(c => c.status === "open").length}
+• صحة النظام: ${Math.round(healthScore)}%
+`;
+    const billiePrompt = AGENT_SYSTEM_PROMPTS["billie"] + `\n\nأنت بيليه، المشرفة العليا على نظام ACIS. ردودك بالعربية الفصحى، مختصرة وذكية، احترافية ودية.\n${systemContext}`;
+    const msgs = history.slice(-6).map((h: any) => ({
+      role: (h.role === "assistant" ? "assistant" : "user") as "user" | "assistant",
+      content: h.text || h.content || "",
+    }));
+
+    let finalText = "";
+    const { model, tokens } = await callAIForTaskStream(
+      "text_complex", billiePrompt, message, { history: msgs },
+      (text: string) => { finalText = text; send({ type: "chunk", text }); }
+    );
+
+    send({ type: "done", text: finalText, model, tokens, timestamp: new Date().toISOString() });
+
+    await db.insert(activityTable).values({
+      id: randomUUID(), type: "billie_alert",
+      title: "محادثة مع بيليه (stream)",
+      description: message.substring(0, 100),
+    });
+  } catch (err: any) {
+    send({ type: "error", message: err?.message || "فشل الاتصال" });
+  }
+  res.end();
+});
+
+router.get("/alerts", async (_req, res) => {
+  const alerts = await db.select().from(systemAlertsTable)
+    .orderBy(desc(systemAlertsTable.created_at)).limit(20);
+  res.json(alerts.map(a => ({
+    ...a,
+    created_at: a.created_at?.toISOString() || new Date().toISOString(),
+    resolved_at: a.resolved_at?.toISOString() || null,
+  })));
+});
+
+router.post("/alerts", async (req, res) => {
+  const { severity, title, message, agent_id } = req.body;
+  if (!title || !message) return res.status(400).json({ error: "title و message مطلوبان" });
+
+  const id = randomUUID();
+  const [alert] = await db.insert(systemAlertsTable).values({
+    id, severity: severity || "warning",
+    agent_id: agent_id || null,
+    title, message,
+  }).returning();
+
+  await db.insert(activityTable).values({
+    id: randomUUID(), type: "billie_alert",
+    title: `تنبيه جديد: ${title}`,
+    description: message.substring(0, 150),
+  });
+
+  broadcast("alerts_updated");
+  broadcast("activity_updated");
+
+  res.status(201).json({
+    ...alert,
+    created_at: alert.created_at?.toISOString() || new Date().toISOString(),
+    resolved_at: null,
+  });
+});
+
+router.patch("/alerts/:alertId/resolve", async (req, res) => {
+  const { alertId } = req.params;
+  await db.update(systemAlertsTable).set({
+    resolved: true,
+    resolved_at: new Date(),
+  }).where(eq(systemAlertsTable.id, alertId));
+
+  broadcast("alerts_updated");
+  res.json({ success: true, resolved_at: new Date().toISOString() });
+});
+
+router.post("/analyze", async (req, res) => {
+  const { scope, target_agent_id } = req.body;
+  const id = randomUUID();
+
+  const agents = await db.select().from(agentsTable);
+  const alerts = await db.select().from(systemAlertsTable).where(eq(systemAlertsTable.resolved, false));
+  const complaints = await db.select().from(complaintsTable);
+  const online = agents.filter(a => a.status === "online").length;
+  const healthScore = Math.min(100, (online / Math.max(agents.length, 1)) * 100 * 0.7 + (100 - Math.min(alerts.length * 5, 30)));
+
+  const analysisContext = `
+بيانات النظام الحالية (${new Date().toLocaleString("ar-SA")}):
+• الوكلاء: ${agents.length} إجمالي، ${online} متصل، ${agents.filter(a => a.status === "busy").length} مشغول
+• التنبيهات النشطة (${alerts.length}): ${alerts.slice(0, 3).map(a => a.title).join(" | ") || "لا توجد"}
+• الشكاوى المفتوحة: ${complaints.filter(c => c.status === "open").length}
+• درجة الصحة المحسوبة: ${Math.round(healthScore)}%
+• نطاق التحليل: ${scope || "شامل"}
+${target_agent_id ? `• الوكيل المستهدف: ${target_agent_id}` : ""}
+• الوكلاء غير المتصلين: ${agents.filter(a => a.status !== "online").map(a => a.nameAr || a.name).join(" | ") || "لا يوجد"}
+`;
+
+  try {
+    const result = await callAIForTask(
+      "text_complex",
+      AGENT_SYSTEM_PROMPTS["billie"],
+      `حلّل النظام بناءً على البيانات وقدّم تقريراً يشمل:
+1. تقييم الحالة العامة مع نقاط القوة والضعف
+2. المخاطر والتهديدات المحتملة
+3. توصيات محددة وقابلة للتنفيذ (3-5 توصيات مرتّبة بالأولوية)
+4. خطة التحسين المقترحة للأسبوع القادم
+
+البيانات:
+${analysisContext}`
+    );
+
+    const lines = result.text.split("\n").filter(l => l.trim());
+    const findings = lines.slice(0, 6).map(line => ({
+      level: line.includes("عاجل") || line.includes("خطر") ? "warning" : "info",
+      message: line.replace(/^[-*•\d.]\s*/, "").substring(0, 250),
+    }));
+    const recommendations = lines
+      .filter(l => l.includes("توصية") || l.includes("يُنصح") || l.includes("يجب") || l.includes("ينبغي"))
+      .slice(0, 3)
+      .map(l => l.replace(/^[-*•\d.]\s*/, "").substring(0, 200));
+
+    await db.insert(activityTable).values({
+      id: randomUUID(), type: "billie_alert",
+      title: "بيليه أجرى تحليلاً شاملاً للنظام",
+      description: `النطاق: ${scope} | الصحة: ${Math.round(healthScore)}% | ${findings.length} نتائج`,
+    });
+
+    res.json({
+      id, scope, health_score: healthScore,
+      findings: findings.length > 0 ? findings : [{ level: "info", message: result.text.substring(0, 300) }],
+      recommendations: recommendations.length > 0 ? recommendations : [result.text.substring(0, 200)],
+      full_analysis: result.text,
+      model_used: result.model,
+      created_at: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    console.error("[بيليه] خطأ في التحليل:", err?.message);
+    res.json({
+      id, scope, health_score: healthScore,
+      findings: [{ level: "info", message: `درجة الصحة المحسوبة: ${Math.round(healthScore)}% — مُستخرجة من بيانات قاعدة البيانات الحية` }],
+      recommendations: ["تفعيل GEMINI_API_KEY أو ALIBABA_API_KEY لتمكين التحليل الذكي الكامل"],
+      full_analysis: `الصحة: ${Math.round(healthScore)}% | الوكلاء: ${online}/${agents.length} متصل | التنبيهات: ${alerts.length}`,
+      created_at: new Date().toISOString(),
+    });
+  }
+});
+
+router.post("/update-agent", async (req, res) => {
+  const { agent_id, update_type, changes, reason } = req.body;
+  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agent_id));
+  if (!agent) return res.status(404).json({ error: "الوكيل غير موجود" });
+
+  if (update_type === "status" && changes.status) {
+    await db.update(agentsTable).set({ status: changes.status }).where(eq(agentsTable.id, agent_id));
+  } else if (update_type === "model" && changes.model) {
+    await db.update(agentsTable).set({ model: changes.model }).where(eq(agentsTable.id, agent_id));
+  }
+
+  await db.insert(activityTable).values({
+    id: randomUUID(), type: "system_update",
+    agent_id, agent_name: agent.nameAr || agent.name,
+    title: `بيليه حدّث ${agent.nameAr || agent.name}`,
+    description: `نوع التحديث: ${update_type} | السبب: ${reason}`,
+  });
+
+  res.json({
+    success: true, agent_id, update_type,
+    message: `تم تحديث ${agent.nameAr || agent.name} بنجاح.`,
+    applied_at: new Date().toISOString(),
+  });
+});
+
+router.get("/complaints", async (_req, res) => {
+  const complaints = await db.select().from(complaintsTable)
+    .orderBy(desc(complaintsTable.created_at)).limit(50);
+  res.json(complaints.map(c => ({
+    ...c,
+    created_at: c.created_at?.toISOString() || new Date().toISOString(),
+    resolved_at: c.resolved_at?.toISOString() || null,
+  })));
+});
+
+router.post("/complaints", async (req, res) => {
+  const { title, description, agent_id, severity } = req.body;
+  const id = randomUUID();
+
+  let billieResponse = `تم استلام شكواك بواسطة بيليه. الأولوية: ${severity === "critical" ? "عاجل جداً" : severity === "high" ? "مرتفعة" : "متوسطة"}. جاري التحقيق.`;
+
+  try {
+    const result = await callAIForTask(
+      "text_complex",
+      AGENT_SYSTEM_PROMPTS["billie"],
+      `مستخدم قدّم شكوى:
+العنوان: ${title}
+الوصف: ${description}
+${agent_id ? `الوكيل المعني: ${agent_id}` : ""}
+الخطورة: ${severity}
+
+اكتب رداً قصيراً (3-4 جمل) بالعربية يطمئن المستخدم، يوضح الإجراءات المتخذة، ويقدر الوقت المتوقع للحل.`
+    );
+    billieResponse = result.text;
+  } catch (err: any) {
+    console.error("[بيليه] خطأ في الرد على الشكوى:", err?.message);
+  }
+
+  const [complaint] = await db.insert(complaintsTable).values({
+    id, title, description, agent_id: agent_id || null,
+    severity, status: "investigating", billie_response: billieResponse,
+  }).returning();
+
+  await db.insert(systemAlertsTable).values({
+    id: randomUUID(),
+    severity: severity === "critical" ? "critical" : severity === "high" ? "error" : "warning",
+    agent_id: agent_id || null,
+    title: `شكوى جديدة: ${title}`,
+    message: description.substring(0, 200),
+  });
+
+  res.status(201).json({
+    ...complaint,
+    created_at: complaint.created_at?.toISOString() || new Date().toISOString(),
+    resolved_at: null,
+  });
+});
+
+router.patch("/complaints/:id/resolve", async (req, res) => {
+  const { id } = req.params;
+  const { resolution_note } = req.body;
+  const [complaint] = await db.select().from(complaintsTable).where(eq(complaintsTable.id, id));
+  if (!complaint) return res.status(404).json({ error: "الشكوى غير موجودة" });
+
+  let finalResponse = resolution_note || "تم حل هذه المشكلة بنجاح. شكراً لتواصلك.";
+  try {
+    const r = await callAIForTask(
+      "text_complex",
+      AGENT_SYSTEM_PROMPTS["billie"],
+      `أغلق هذه الشكوى بنجاح وأرسل رسالة ختامية احترافية:
+الشكوى: ${complaint.title}
+الوصف: ${complaint.description}
+${resolution_note ? `ملاحظة الحل: ${resolution_note}` : ""}
+
+اكتب رسالة ختام قصيرة (2-3 جمل) تؤكد حل المشكلة وتشكر المستخدم.`
+    );
+    finalResponse = r.text;
+  } catch {}
+
+  await db.update(complaintsTable).set({
+    status: "resolved",
+    billie_response: finalResponse,
+    resolved_at: new Date(),
+  }).where(eq(complaintsTable.id, id));
+
+  await db.insert(activityTable).values({
+    id: randomUUID(), type: "system_update",
+    title: `بيليه أغلق الشكوى: ${complaint.title}`,
+    description: finalResponse.substring(0, 150),
+  });
+
+  res.json({
+    success: true, id,
+    final_response: finalResponse,
+    resolved_at: new Date().toISOString(),
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+//  جراحة الكود — Code Surgery Endpoints
+// ══════════════════════════════════════════════════════════════
+
+const PATCHABLE_FIELDS = ["prompt", "status", "model", "description", "descriptionAr", "capabilities", "subagents"] as const;
+type PatchableField = typeof PATCHABLE_FIELDS[number];
+
+// GET /api/billie/agent-code/:agentId — جلب إعدادات وكيل كاملة
+router.get("/agent-code/:agentId", async (req, res) => {
+  const { agentId } = req.params;
+  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId));
+  if (!agent) return res.status(404).json({ error: "الوكيل غير موجود" });
+
+  const patches = await db.select().from(agentPatchesTable)
+    .where(eq(agentPatchesTable.agent_id, agentId))
+    .orderBy(desc(agentPatchesTable.created_at))
+    .limit(10);
+
+  res.json({
+    agent: {
+      id: agent.id,
+      name: agent.name,
+      nameAr: agent.nameAr,
+      status: agent.status,
+      model: agent.model,
+      description: agent.description,
+      descriptionAr: agent.descriptionAr,
+      capabilities: agent.capabilities,
+      subagents: agent.subagents,
+      prompt: agent.prompt || "(يستخدم البرومبت الافتراضي)",
+      system: agent.system,
+      icon: agent.icon,
+      color: agent.color,
+      executions_today: agent.executions_today,
+      success_rate: agent.success_rate,
+      avg_response_ms: agent.avg_response_ms,
+    },
+    recent_patches: patches.map(p => ({
+      ...p,
+      created_at: p.created_at?.toISOString() || new Date().toISOString(),
+      rolled_back_at: p.rolled_back_at?.toISOString() || null,
+    })),
+    patchable_fields: PATCHABLE_FIELDS,
+  });
+});
+
+// POST /api/billie/diagnose — تشخيص ذكي واقتراح تعديلات
+router.post("/diagnose", async (req, res) => {
+  const { agent_id, issue_description } = req.body;
+  if (!agent_id) return res.status(400).json({ error: "agent_id مطلوب" });
+
+  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agent_id));
+  if (!agent) return res.status(404).json({ error: "الوكيل غير موجود" });
+
+  const recentPatches = await db.select().from(agentPatchesTable)
+    .where(eq(agentPatchesTable.agent_id, agent_id))
+    .orderBy(desc(agentPatchesTable.created_at))
+    .limit(5);
+
+  const agentSnapshot = `
+الوكيل: ${agent.nameAr || agent.name} (${agent.id})
+الحالة: ${agent.status}
+النموذج: ${agent.model}
+معدل النجاح: ${agent.success_rate}%
+متوسط الاستجابة: ${agent.avg_response_ms}ms
+التنفيذات اليوم: ${agent.executions_today}
+الوصف: ${agent.descriptionAr || agent.description}
+القدرات: ${JSON.stringify(agent.capabilities)}
+البرومبت الحالي: ${(agent.prompt || AGENT_SYSTEM_PROMPTS[agent.system] || "").substring(0, 400)}
+التعديلات السابقة: ${recentPatches.length > 0 ? recentPatches.map(p => `${p.field}→${p.patch_type}`).join(", ") : "لا يوجد"}
+`;
+
+  const diagnosisPrompt = `أنت بيليه، خبيرة تشخيص وكلاء الذكاء الاصطناعي في نظام ACIS.
+
+بيانات الوكيل:
+${agentSnapshot}
+${issue_description ? `المشكلة المُبلَّغة: ${issue_description}` : ""}
+
+حلّل الوكيل واقترح تعديلات دقيقة. أجب بـ JSON فقط بهذا الشكل:
+{
+  "severity": "critical|high|medium|low",
+  "diagnosis": "تشخيص مختصر (جملة واحدة)",
+  "root_cause": "السبب الجذري",
+  "patches": [
+    {
+      "field": "prompt|status|model|description|descriptionAr|capabilities",
+      "patch_type": "update|fix|optimize",
+      "current_value": "القيمة الحالية",
+      "proposed_value": "القيمة المقترحة",
+      "reason": "سبب التعديل",
+      "priority": "high|medium|low"
+    }
+  ],
+  "summary": "ملخص التوصية للقائد"
+}
+القيود: أقصى 3 تعديلات، ركّز على الأكثر تأثيراً، لا تعدّل ما يعمل بشكل صحيح.`;
+
+  try {
+    const result = await callAIForTask("text_complex", AGENT_SYSTEM_PROMPTS["billie"], diagnosisPrompt);
+
+    let diagnosis: any;
+    try {
+      const jsonMatch = result.text.match(/\{[\s\S]*\}/);
+      diagnosis = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+    } catch {
+      diagnosis = null;
+    }
+
+    if (!diagnosis) {
+      diagnosis = {
+        severity: "medium",
+        diagnosis: "تم تحليل الوكيل — لا توجد مشاكل حرجة",
+        root_cause: "أداء طبيعي",
+        patches: [],
+        summary: result.text.substring(0, 300),
+      };
+    }
+
+    await db.insert(activityTable).values({
+      id: randomUUID(), type: "billie_alert",
+      agent_id, agent_name: agent.nameAr || agent.name,
+      title: `بيليه شخّصت ${agent.nameAr || agent.name}`,
+      description: `الخطورة: ${diagnosis.severity} | ${diagnosis.diagnosis}`,
+    });
+
+    res.json({
+      agent_id,
+      agent_name: agent.nameAr || agent.name,
+      model_used: result.model,
+      tokens_used: result.tokens,
+      ...diagnosis,
+      diagnosed_at: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    console.error("[جراحة الكود] خطأ في التشخيص:", err?.message);
+    res.status(500).json({ error: "فشل التشخيص", detail: err?.message });
+  }
+});
+
+// POST /api/billie/apply-patch — تطبيق تعديل على وكيل
+router.post("/apply-patch", async (req, res) => {
+  const { agent_id, field, new_value, reason, patch_type = "update" } = req.body;
+  if (!agent_id || !field || new_value === undefined || !reason) {
+    return res.status(400).json({ error: "agent_id, field, new_value, reason مطلوبة" });
+  }
+  if (!PATCHABLE_FIELDS.includes(field as PatchableField)) {
+    return res.status(400).json({ error: `الحقل "${field}" غير مسموح بتعديله. الحقول المسموحة: ${PATCHABLE_FIELDS.join(", ")}` });
+  }
+
+  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, agent_id));
+  if (!agent) return res.status(404).json({ error: "الوكيل غير موجود" });
+
+  const old_value = JSON.stringify((agent as any)[field] ?? null);
+
+  const updateData: Record<string, any> = {};
+  if (field === "capabilities" || field === "subagents") {
+    try {
+      updateData[field] = typeof new_value === "string" ? JSON.parse(new_value) : new_value;
+    } catch {
+      updateData[field] = new_value;
+    }
+  } else {
+    updateData[field] = new_value;
+  }
+  updateData.updated_at = new Date();
+
+  await db.update(agentsTable).set(updateData).where(eq(agentsTable.id, agent_id));
+
+  const patchId = randomUUID();
+  await db.insert(agentPatchesTable).values({
+    id: patchId,
+    agent_id,
+    patch_type,
+    field,
+    old_value,
+    new_value: typeof new_value === "object" ? JSON.stringify(new_value) : String(new_value),
+    reason,
+    applied_by: "billie",
+    status: "active",
+  });
+
+  await db.insert(activityTable).values({
+    id: randomUUID(), type: "system_update",
+    agent_id, agent_name: agent.nameAr || agent.name,
+    title: `بيليه عدّلت ${agent.nameAr || agent.name}`,
+    description: `الحقل: ${field} | ${reason.substring(0, 120)}`,
+  });
+
+  broadcast("agents_updated");
+  broadcast("activity_updated");
+
+  res.json({
+    success: true,
+    patch_id: patchId,
+    agent_id,
+    field,
+    old_value,
+    new_value: typeof new_value === "object" ? JSON.stringify(new_value) : String(new_value),
+    applied_at: new Date().toISOString(),
+    message: `تم تعديل ${field} للوكيل ${agent.nameAr || agent.name} بنجاح.`,
+  });
+});
+
+// POST /api/billie/rollback-patch/:patchId — التراجع عن تعديل
+router.post("/rollback-patch/:patchId", async (req, res) => {
+  const { patchId } = req.params;
+  const [patch] = await db.select().from(agentPatchesTable).where(eq(agentPatchesTable.id, patchId));
+  if (!patch) return res.status(404).json({ error: "التعديل غير موجود" });
+  if (patch.status === "rolled_back") return res.status(400).json({ error: "التعديل مُتراجَع عنه بالفعل" });
+
+  const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, patch.agent_id));
+  if (!agent) return res.status(404).json({ error: "الوكيل غير موجود" });
+
+  if (patch.old_value !== null && patch.old_value !== undefined) {
+    const updateData: Record<string, any> = {};
+    if (patch.field === "capabilities" || patch.field === "subagents") {
+      try { updateData[patch.field] = JSON.parse(patch.old_value); } catch { updateData[patch.field] = patch.old_value; }
+    } else {
+      updateData[patch.field] = patch.old_value === "null" ? null : patch.old_value;
+    }
+    updateData.updated_at = new Date();
+    await db.update(agentsTable).set(updateData).where(eq(agentsTable.id, patch.agent_id));
+  }
+
+  await db.update(agentPatchesTable).set({
+    status: "rolled_back",
+    rolled_back_at: new Date(),
+  }).where(eq(agentPatchesTable.id, patchId));
+
+  await db.insert(activityTable).values({
+    id: randomUUID(), type: "system_update",
+    agent_id: patch.agent_id, agent_name: agent.nameAr || agent.name,
+    title: `بيليه تراجعت عن تعديل ${agent.nameAr || agent.name}`,
+    description: `الحقل: ${patch.field} | استُعيدت القيمة السابقة`,
+  });
+
+  broadcast("agents_updated");
+  broadcast("activity_updated");
+
+  res.json({
+    success: true,
+    patch_id: patchId,
+    agent_id: patch.agent_id,
+    field: patch.field,
+    restored_value: patch.old_value,
+    rolled_back_at: new Date().toISOString(),
+  });
+});
+
+// GET /api/billie/patches — سجل جميع التعديلات
+router.get("/patches", async (req, res) => {
+  const { agent_id } = req.query;
+  let query = db.select().from(agentPatchesTable).orderBy(desc(agentPatchesTable.created_at)).limit(50);
+  if (agent_id) {
+    const patches = await db.select().from(agentPatchesTable)
+      .where(eq(agentPatchesTable.agent_id, String(agent_id)))
+      .orderBy(desc(agentPatchesTable.created_at))
+      .limit(50);
+    return res.json(patches.map(p => ({
+      ...p,
+      created_at: p.created_at?.toISOString() || new Date().toISOString(),
+      rolled_back_at: p.rolled_back_at?.toISOString() || null,
+    })));
+  }
+  const patches = await query;
+  res.json(patches.map(p => ({
+    ...p,
+    created_at: p.created_at?.toISOString() || new Date().toISOString(),
+    rolled_back_at: p.rolled_back_at?.toISOString() || null,
+  })));
+});
+
+// ══════════════════════════════════════════════════════════════
+//  وكيل الكود — Billie Code Agent (file ops + AI programming)
+// ══════════════════════════════════════════════════════════════
+
+const WS_ROOT = resolve("/home/runner/workspace");
+
+// مسارات مسموح بقراءتها
+const READ_ALLOWED = ["artifacts/acis-desktop/src", "artifacts/api-server/src", "lib/db/src", "lib/api-spec"];
+// مسارات مسموح بكتابتها فقط
+const WRITE_ALLOWED = ["artifacts/acis-desktop/src", "artifacts/api-server/src", "lib/db/src"];
+// أنماط محظورة دائماً
+const BLOCKED_RE = [/node_modules/, /[/\\]dist[/\\]/, /[/\\]\.git[/\\]/, /[/\\]data[/\\]/, /[/\\]\.local[/\\]/];
+
+function isSafe(rel: string, forWrite = false): string | null {
+  if (!rel || rel.includes("..") || rel.startsWith("/")) return null;
+  const abs = resolve(WS_ROOT, rel);
+  if (!abs.startsWith(WS_ROOT + "/")) return null;
+  if (BLOCKED_RE.some(r => r.test(abs))) return null;
+  const allowed = forWrite ? WRITE_ALLOWED : READ_ALLOWED;
+  if (!allowed.some(p => abs.startsWith(resolve(WS_ROOT, p)))) return null;
+  return abs;
+}
+
+function safeListDir(rel: string, depth = 0): any[] {
+  if (depth > 4) return [];
+  const abs = isSafe(rel);
+  if (!abs || !existsSync(abs)) return [];
+  try {
+    return readdirSync(abs)
+      .filter(n => !BLOCKED_RE.some(r => r.test(n)) && !n.startsWith("."))
+      .map(name => {
+        const cr = `${rel}/${name}`;
+        const ca = join(abs, name);
+        const isDir = statSync(ca).isDirectory();
+        return { name, path: cr, isDir, children: isDir && depth < 2 ? safeListDir(cr, depth + 1) : [] };
+      });
+  } catch { return []; }
+}
+
+function safeReadFile(rel: string): { content: string; lines: number } | null {
+  const abs = isSafe(rel);
+  if (!abs || !existsSync(abs)) return null;
+  try {
+    const st = statSync(abs);
+    if (st.size > 200_000) return { content: "[ملف كبير جداً للقراءة الكاملة]", lines: 0 };
+    const raw = readFileSync(abs, "utf-8");
+    const ls = raw.split("\n");
+    const content = ls.length > 700 ? ls.slice(0, 700).join("\n") + "\n// ... [مقطوع عند 700 سطر]" : raw;
+    return { content, lines: ls.length };
+  } catch { return null; }
+}
+
+function safeWriteFile(rel: string, content: string): { ok: boolean; error?: string } {
+  const abs = isSafe(rel, true);
+  if (!abs) return { ok: false, error: "المسار غير مسموح به للكتابة" };
+  try {
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, content, "utf-8");
+    return { ok: true };
+  } catch (e: any) { return { ok: false, error: e.message }; }
+}
+
+// ── استخراج JSON قوي من ردود الذكاء الاصطناعي ──
+function extractJSON(text: string): string | null {
+  // محاولة 1: إزالة markdown backticks
+  const cleaned = text.replace(/```(?:json)?\s*/gi, "").replace(/```\s*$/g, "").trim();
+  try { JSON.parse(cleaned); return cleaned; } catch { /* continue */ }
+  // محاولة 2: إيجاد أول { وآخر }
+  const first = text.indexOf("{");
+  const last  = text.lastIndexOf("}");
+  if (first !== -1 && last > first) {
+    const slice = text.slice(first, last + 1);
+    try { JSON.parse(slice); return slice; } catch { /* continue */ }
+  }
+  // محاولة 3: regex لاستخراج كتلة JSON
+  const match = text.match(/\{[\s\S]*\}/);
+  if (match) {
+    try { JSON.parse(match[0]); return match[0]; } catch { /* continue */ }
+  }
+  return null;
+}
+
+// نظام برومبت وكيل الكود
+const CODE_AGENT_SYSTEM = `أنت بيليه — وكيلة الذكاء الاصطناعي الخبيرة في برمجة منصة ACIS.
+
+هيكل المشروع (pnpm monorepo في /home/runner/workspace):
+- artifacts/acis-desktop/src/ — الواجهة الأمامية (React + Vite + TypeScript + Tailwind CSS + shadcn/ui)
+  - pages/ — صفحات: billie.tsx, dashboard.tsx, acis.tsx, production.tsx, caeos.tsx, nexus.tsx, conversations.tsx, settings.tsx, archive.tsx
+  - components/layout.tsx — التنقل (NAV_SECTIONS)، App.tsx — المسارات (wouter Router)
+  - components/ui/ — shadcn مكونات (Button, Badge, Input, Textarea, Skeleton, Dialog…)
+- artifacts/api-server/src/ — الخادم الخلفي (Express + TypeScript)
+  - routes/ — routes/*.ts (agents.ts, billie.ts, production.ts, system.ts…)
+  - routes/index.ts — تسجيل المسارات
+  - lib/ai.ts — callAIForTask(taskType, system, prompt), AGENT_SYSTEM_PROMPTS{}
+- lib/db/src/schema/index.ts — Drizzle ORM SQLite جداول: agents، agentPatchesTable، activityTable…
+
+جدول الوكلاء: id(text PK), name, nameAr, system, description, descriptionAr,
+status(online/offline/busy), model(gemini-2.5-pro/gemini-2.0-flash/qwen-max),
+capabilities(json[]), subagents(json[]), icon(text), color(text), prompt(text|null)
+
+لإضافة صفحة: أنشئ src/pages/page.tsx، أضف Route في App.tsx، أضف للـ NAV_SECTIONS في layout.tsx
+لإضافة مسار API: أنشئ routes/new.ts، سجّله في routes/index.ts باستخدام router.use("/prefix", newRouter)
+
+أسلوب الكود: TypeScript صارم، Tailwind dark theme، Arabic RTL (dir="rtl")، shadcn/ui مكونات، drizzle-orm للـ DB
+مهم جداً: ارجع JSON نظيف فقط بدون أي نص قبله أو بعده`;
+
+const CODE_PLAN_PROMPT = (task: string) => `المهمة: ${task}
+
+ارجع JSON فقط (بدون markdown، بدون أي نص إضافي):
+{"plan":"وصف مختصر","files_to_read":["مسار/من/workspace"],"scope":"page|route|style|fix|other"}
+
+ملاحظة: files_to_read مسارات نسبية من /home/runner/workspace، حد أقصى 5 ملفات.
+للصفحات: اقرأ App.tsx و components/layout.tsx وصفحة مشابهة.
+للمسارات: اقرأ routes/index.ts وملف route مشابه.`;
+
+const CODE_GENERATE_PROMPT = (task: string, fileContents: Record<string, string>) => {
+  const filesStr = Object.entries(fileContents)
+    .map(([p, c]) => `\n=== ${p} ===\n${c}`)
+    .join("\n");
+  return `المهمة: ${task}
+
+الملفات الحالية:${filesStr}
+
+أعد JSON فقط (بدون markdown) بهذا الشكل الصارم:
+{
+  "summary": "ملخص ما تم (2-3 جمل)",
+  "operations": [
+    {
+      "type": "write",
+      "path": "artifacts/acis-desktop/src/pages/example.tsx",
+      "content": "الكود الكامل للملف هنا",
+      "is_new": false,
+      "reason": "سبب التعديل"
+    }
+  ]
+}
+
+القواعد الصارمة:
+- content: الملف الكامل، لا تقطعه
+- المسارات نسبية من workspace
+- للملفات الكبيرة: عدّل فقط ما يلزم ولكن اكتب الملف الكامل
+- لإنشاء وكيل: عدّل lib/seed.ts وأضف AGENT_SYSTEM_PROMPTS في lib/ai.ts
+- لا تعدّل dist/ أو node_modules/ أو data/`;
+};
+
+// GET /api/billie/workspace/ls — قائمة الملفات
+router.get("/workspace/ls", (req, res) => {
+  const rel = String(req.query.path || "artifacts/acis-desktop/src");
+  const tree = safeListDir(rel);
+  if (!tree) return res.status(403).json({ error: "مسار غير مسموح" });
+  res.json({ path: rel, tree });
+});
+
+// POST /api/billie/workspace/read — قراءة ملف
+router.post("/workspace/read", (req, res) => {
+  const { path: rel } = req.body as { path: string };
+  if (!rel) return res.status(400).json({ error: "path مطلوب" });
+  const result = safeReadFile(rel);
+  if (!result) return res.status(404).json({ error: "الملف غير موجود أو غير مسموح بقراءته" });
+  res.json({ path: rel, ...result });
+});
+
+// POST /api/billie/workspace/write — كتابة/تعديل ملف
+router.post("/workspace/write", async (req, res) => {
+  const { path: rel, content } = req.body as { path: string; content: string };
+  if (!rel || content === undefined) return res.status(400).json({ error: "path و content مطلوبان" });
+  const result = safeWriteFile(rel, content);
+  if (!result.ok) return res.status(403).json({ error: result.error });
+  await db.insert(activityTable).values({ id: randomUUID(), type: "agent_completed", title: "بيليه عدّلت ملفاً", description: rel });
+  res.json({ path: rel, lines: content.split("\n").length, written_at: new Date().toISOString() });
+});
+
+// POST /api/billie/code-agent/stream — وكيل الكود الرئيسي (SSE)
+router.post("/code-agent/stream", async (req, res) => {
+  const { task } = req.body as { task: string };
+  if (!task?.trim()) return res.status(400).json({ error: "task مطلوب" });
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+
+  const emit = (ev: object) => res.write(`data: ${JSON.stringify(ev)}\n\n`);
+
+  try {
+    // ── مرحلة 1: تخطيط ──
+    emit({ type: "status", message: "أُحلّل المهمة وأحدد الملفات المطلوبة…" });
+    const planRaw = await callAIForTask("code_fast", CODE_AGENT_SYSTEM, CODE_PLAN_PROMPT(task.trim()));
+    let plan: { plan: string; files_to_read: string[]; scope: string };
+    const planJSON = extractJSON(planRaw.text);
+    if (planJSON) {
+      try { plan = JSON.parse(planJSON); }
+      catch { plan = { plan: "تنفيذ المهمة المطلوبة", files_to_read: [], scope: "other" }; }
+    } else {
+      plan = { plan: "تنفيذ المهمة المطلوبة", files_to_read: [], scope: "other" };
+    }
+    emit({ type: "plan", plan: plan.plan, files_to_read: plan.files_to_read, scope: plan.scope });
+
+    // ── مرحلة 2: قراءة الملفات ──
+    const fileContents: Record<string, string> = {};
+    for (const filePath of (plan.files_to_read || []).slice(0, 6)) {
+      emit({ type: "reading", path: filePath });
+      const result = safeReadFile(filePath);
+      if (result) {
+        fileContents[filePath] = result.content;
+        emit({ type: "file_read", path: filePath, lines: result.lines, preview: result.content.slice(0, 300) });
+      } else {
+        emit({ type: "file_read", path: filePath, lines: 0, error: "لم يُعثر على الملف أو غير مسموح" });
+      }
+    }
+
+    // ── مرحلة 3: توليد الكود ──
+    emit({ type: "status", message: "أُولّد الكود والتعديلات…" });
+    const codeRaw = await callAIForTask("code", CODE_AGENT_SYSTEM, CODE_GENERATE_PROMPT(task.trim(), fileContents));
+    let ops: { summary: string; operations: Array<{ type: string; path: string; content: string; is_new: boolean; reason: string }> };
+    const opsJSON = extractJSON(codeRaw.text);
+    if (!opsJSON) {
+      emit({ type: "error", message: `فشل تحليل رد الذكاء الاصطناعي — الرد كان: "${codeRaw.text.slice(0, 100)}"` });
+      res.end(); return;
+    }
+    try { ops = JSON.parse(opsJSON); }
+    catch {
+      emit({ type: "error", message: "رد الذكاء الاصطناعي لا يمثّل JSON صالحاً — حاول بوصف أكثر تفصيلاً" });
+      res.end(); return;
+    }
+
+    // ── مرحلة 4: تطبيق التعديلات ──
+    const modifiedFiles: string[] = [];
+    const errors: string[] = [];
+    for (const op of (ops.operations || []).slice(0, 10)) {
+      if (op.type !== "write" || !op.path || !op.content) continue;
+      emit({ type: "writing", path: op.path, is_new: op.is_new || false, reason: op.reason });
+      const result = safeWriteFile(op.path, op.content);
+      if (result.ok) {
+        modifiedFiles.push(op.path);
+        emit({ type: "file_written", path: op.path, lines: op.content.split("\n").length, is_new: op.is_new || false, content_preview: op.content.slice(0, 500) });
+        await db.insert(activityTable).values({ id: randomUUID(), type: "agent_completed", title: op.is_new ? "بيليه أنشأت ملفاً جديداً" : "بيليه عدّلت ملفاً", description: op.path });
+      } else {
+        errors.push(`${op.path}: ${result.error}`);
+        emit({ type: "write_error", path: op.path, error: result.error });
+      }
+    }
+
+    emit({ type: "done", summary: ops.summary, modified_files: modifiedFiles, errors });
+  } catch (err: any) {
+    console.error("[CodeAgent] خطأ:", err?.message);
+    emit({ type: "error", message: err?.message || "خطأ غير معروف" });
+  }
+  res.end();
+});
+
+// ══════════════════════════════════════════════════════════════
+//  توليد الوسائط — Image & TTS Generation for Billie Chat
+// ══════════════════════════════════════════════════════════════
+
+// POST /api/billie/create-agent — إنشاء وكيل جديد مباشرةً في قاعدة البيانات
+router.post("/create-agent", async (req, res) => {
+  const { name, mission } = req.body as { name?: string; mission?: string };
+  if (!name?.trim() || !mission?.trim())
+    return res.status(400).json({ error: "name و mission مطلوبان" });
+
+  try {
+    // استخدام AI لتوليد مواصفات الوكيل الكاملة
+    const specPrompt = `أنت خبير في تصميم وكلاء الذكاء الاصطناعي لمنصة ACIS السينمائية.
+اسم الوكيل: ${name.trim()}
+مهمته: ${mission.trim()}
+
+ارجع JSON فقط (بدون markdown):
+{
+  "id": "معرف-انكليزي-بدون-مسافات-kebab-case",
+  "name": "Name in English",
+  "nameAr": "الاسم بالعربية",
+  "description": "Short description in English",
+  "descriptionAr": "وصف مختصر بالعربية (جملة واحدة)",
+  "model": "gemini-2.0-flash",
+  "icon": "رمز emoji مناسب",
+  "color": "لون CSS hex مثل #4ADE80",
+  "capabilities": ["قدرة 1", "قدرة 2", "قدرة 3", "قدرة 4"],
+  "prompt": "برومبت النظام الكامل بالعربية (3-5 جمل تصف شخصية الوكيل ومهامه وأسلوبه)"
+}`;
+
+    const specRaw = await callAIForTask("code_fast", "", specPrompt);
+    const specJSON = extractJSON(specRaw.text);
+    if (!specJSON) return res.status(502).json({ error: "فشل توليد مواصفات الوكيل" });
+
+    const spec = JSON.parse(specJSON);
+    const agentId = (spec.id || `agent-${Date.now()}`).toLowerCase().replace(/[^a-z0-9-]/g, "-");
+
+    // التحقق من عدم وجود ID مكرر
+    const [existing] = await db.select().from(agentsTable).where(eq(agentsTable.id, agentId));
+    if (existing) return res.status(409).json({ error: `الوكيل "${agentId}" موجود مسبقاً` });
+
+    // إدراج الوكيل في قاعدة البيانات
+    const [newAgent] = await db.insert(agentsTable).values({
+      id: agentId,
+      name:          spec.name || name,
+      nameAr:        spec.nameAr || name,
+      system:        agentId,
+      description:   spec.description || mission,
+      descriptionAr: spec.descriptionAr || mission,
+      status:        "online",
+      model:         spec.model || "gemini-2.0-flash",
+      capabilities:  JSON.stringify(spec.capabilities || []),
+      subagents:     "[]",
+      icon:          spec.icon || "🤖",
+      color:         spec.color || "#6366F1",
+      prompt:        spec.prompt || null,
+      executions_today: 0,
+      total_executions: 0,
+    }).returning();
+
+    await db.insert(activityTable).values({
+      id: randomUUID(), type: "agent_completed",
+      title: `بيليه أنشأت وكيلاً جديداً: ${spec.nameAr || name}`,
+      description: spec.descriptionAr || mission,
+    });
+
+    res.json({ agent: newAgent, spec });
+  } catch (err: any) {
+    console.error("[Billie/CreateAgent]", err?.message);
+    res.status(500).json({ error: err?.message || "فشل إنشاء الوكيل" });
+  }
+});
+
+// ── Web Search (DuckDuckGo + AI summary) ──────────────────────────────────────
+router.post("/web-search", async (req, res) => {
+  const { query } = req.body as { query?: string };
+  if (!query?.trim()) return res.status(400).json({ error: "query مطلوب" });
+
+  try {
+    const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+    const ddgRes = await fetch(ddgUrl, { headers: { "User-Agent": "ACIS-Bot/1.0" } });
+    const ddgData: any = await ddgRes.json().catch(() => ({}));
+
+    const results: { title: string; url: string; snippet: string }[] = [];
+
+    if (ddgData.AbstractText) {
+      results.push({ title: ddgData.Heading || query, url: ddgData.AbstractURL || "", snippet: ddgData.AbstractText });
+    }
+    if (Array.isArray(ddgData.RelatedTopics)) {
+      for (const t of ddgData.RelatedTopics.slice(0, 6)) {
+        if (t.Text && t.FirstURL) {
+          results.push({ title: t.Text.split(" - ")[0] || t.Text.substring(0, 60), url: t.FirstURL, snippet: t.Text });
+        }
+      }
+    }
+
+    const contextText = results.length > 0
+      ? results.map((r, i) => `${i + 1}. ${r.title}\n${r.snippet}\n(${r.url})`).join("\n\n")
+      : `لا توجد نتائج مباشرة لـ "${query}"`;
+
+    const aiPrompt = `أنت بيليه، المشرفة الذكية لنظام ACIS. لخّص نتائج البحث التالية بإيجاز مفيد باللغة العربية:\n\nالبحث: "${query}"\n\nالنتائج:\n${contextText}`;
+    const summary = await callAIForTask("text_simple", aiPrompt, `لخّص النتائج`);
+
+    res.json({ query, results, summary: summary.text, model: summary.model, searched_at: new Date().toISOString() });
+  } catch (err: any) {
+    console.error("[Billie/WebSearch] خطأ:", err?.message);
+    res.status(500).json({ error: err?.message || "فشل البحث" });
+  }
+});
+
+router.post("/generate-image", async (req, res) => {
+  const { prompt } = req.body as { prompt?: string };
+  if (!prompt?.trim()) return res.status(400).json({ error: "prompt مطلوب" });
+
+  try {
+    console.log(`[Billie/ImageGen] توليد صورة: "${prompt.slice(0, 80)}"`);
+    const result = await callGeminiImageGen(prompt.trim());
+    if (!result?.imageData) return res.status(502).json({ error: "فشل توليد الصورة — تحقق من GEMINI_API_KEY" });
+
+    const filename = saveImageFile(`billie-img-${randomUUID()}`, result.imageData, result.mimeType);
+    await db.insert(activityTable).values({
+      id: randomUUID(), type: "agent_completed",
+      title: "بيليه ولّدت صورة",
+      description: prompt.slice(0, 120),
+    });
+    res.json({ filename, caption: result.caption || "", generated_at: new Date().toISOString() });
+  } catch (err: any) {
+    console.error("[Billie/ImageGen] خطأ:", err?.message);
+    res.status(500).json({ error: err?.message || "فشل توليد الصورة" });
+  }
+});
+
+router.post("/tts-chat", async (req, res) => {
+  const { text, voice = "Charon" } = req.body as { text?: string; voice?: string };
+  if (!text?.trim()) return res.status(400).json({ error: "text مطلوب" });
+
+  try {
+    const script = extractTtsScript(text.trim(), 600);
+    console.log(`[Billie/TTS-Chat] توليد صوت (${script.length} حرف)`);
+    const ttsResult = await callGeminiTTS(script, voice);
+    if (!ttsResult?.audioData) return res.status(502).json({ error: "فشل توليد الصوت — تحقق من GEMINI_API_KEY" });
+
+    const filename = saveTtsAudio(`billie-tts-${randomUUID()}`, ttsResult.audioData, ttsResult.mimeType);
+    await db.insert(activityTable).values({
+      id: randomUUID(), type: "agent_completed",
+      title: "بيليه ولّدت مقطع صوتي",
+      description: script.slice(0, 80),
+    });
+    res.json({ filename, generated_at: new Date().toISOString() });
+  } catch (err: any) {
+    console.error("[Billie/TTS-Chat] خطأ:", err?.message);
+    res.status(500).json({ error: err?.message || "فشل توليد الصوت" });
+  }
+});
+
+export default router;

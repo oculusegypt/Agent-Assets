@@ -1,0 +1,3 @@
+artifacts/electron/dist-app/ACIS[[:space:]]—[[:space:]]مركز[[:space:]]القيادة[[:space:]]السينمائي-3.0.0.AppImage filter=lfs diff=lfs merge=lfs -text
+artifacts/electron/dist-app/ACIS-v3.0-Linux.tar.gz filter=lfs diff=lfs merge=lfs -text
+artifacts/electron/dist-app/linux-unpacked/@workspaceacis-electron filter=lfs diff=lfs merge=lfs -text

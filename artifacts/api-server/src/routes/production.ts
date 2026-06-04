@@ -1,0 +1,515 @@
+import { Router } from "express";
+import { db } from "@workspace/db";
+import { projectsTable, generationJobsTable, activityTable } from "@workspace/db";
+import { eq, desc } from "drizzle-orm";
+import { randomUUID } from "crypto";
+import { callAIForTask, callGeminiTTS, callGeminiImageGen, AGENT_SYSTEM_PROMPTS } from "../lib/ai.js";
+import { broadcast } from "../lib/ws.js";
+import { saveTtsAudio, saveImageFile, extractTtsScript } from "../lib/media.js";
+import { buildCompilationVideo, extractScenes } from "../lib/video.js";
+
+const router = Router();
+
+const AI_MODELS = [
+  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", provider: "Google", type: "language", status: "online", arabic_support: true, free_tier: false, cost_per_request: 0.007, avg_latency_ms: 3200, quality_score: 0.96, cinematic_score: 0.94 },
+  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", provider: "Google", type: "language", status: "online", arabic_support: true, free_tier: true, cost_per_request: 0.002, avg_latency_ms: 1100, quality_score: 0.88, cinematic_score: 0.80 },
+  { id: "qwen-72b", name: "Qwen 3.0 72B", provider: "Alibaba", type: "language", status: "online", arabic_support: true, free_tier: true, cost_per_request: 0.002, avg_latency_ms: 1800, quality_score: 0.88, cinematic_score: 0.70 },
+  { id: "wan-video-3", name: "Wan Video 3.0", provider: "Alibaba", type: "video", status: "online", arabic_support: false, free_tier: false, cost_per_request: 0.045, avg_latency_ms: 12500, quality_score: 0.92, cinematic_score: 0.90 },
+  { id: "flux-pro-ultra", name: "FLUX.1 Pro Ultra", provider: "Black Forest Labs", type: "image", status: "online", arabic_support: false, free_tier: false, cost_per_request: 0.035, avg_latency_ms: 7200, quality_score: 0.93, cinematic_score: 0.90 },
+  { id: "flux-schnell", name: "FLUX.1 Schnell", provider: "Black Forest Labs", type: "image", status: "online", arabic_support: false, free_tier: true, cost_per_request: 0.003, avg_latency_ms: 2000, quality_score: 0.82, cinematic_score: 0.78 },
+  { id: "kokoro-tts-v2", name: "Kokoro TTS v2.0", provider: "HuggingFace", type: "tts", status: "online", arabic_support: true, free_tier: true, cost_per_request: 0.001, avg_latency_ms: 1500, quality_score: 0.91, cinematic_score: 0.85 },
+  { id: "musicgen-3", name: "MusicGen 3.0", provider: "Meta AI", type: "music", status: "online", arabic_support: true, free_tier: true, cost_per_request: 0.002, avg_latency_ms: 8000, quality_score: 0.88, cinematic_score: 0.90 },
+  { id: "ace-step", name: "ACE-Step Music", provider: "HuggingFace", type: "music", status: "online", arabic_support: true, free_tier: true, cost_per_request: 0.0, avg_latency_ms: 6000, quality_score: 0.85, cinematic_score: 0.88 },
+  { id: "sora-v2", name: "Sora v2", provider: "OpenAI", type: "video", status: "degraded", arabic_support: false, free_tier: false, cost_per_request: 0.12, avg_latency_ms: 45000, quality_score: 0.96, cinematic_score: 0.95 },
+  { id: "runway-gen4", name: "Runway Gen-4", provider: "Runway ML", type: "video", status: "online", arabic_support: false, free_tier: false, cost_per_request: 0.055, avg_latency_ms: 15200, quality_score: 0.90, cinematic_score: 0.92 },
+  { id: "kling-v2", name: "Kling v2", provider: "Kuaishou", type: "video", status: "online", arabic_support: false, free_tier: false, cost_per_request: 0.048, avg_latency_ms: 14800, quality_score: 0.88, cinematic_score: 0.89 },
+  { id: "eleven-multilingual-v3", name: "ElevenLabs Multilingual v3", provider: "ElevenLabs", type: "tts", status: "online", arabic_support: true, free_tier: false, cost_per_request: 0.018, avg_latency_ms: 1500, quality_score: 0.95, cinematic_score: 0.92 },
+  { id: "stable-audio-2", name: "Stable Audio 2.0", provider: "Stability AI", type: "audio", status: "online", arabic_support: false, free_tier: true, cost_per_request: 0.004, avg_latency_ms: 5000, quality_score: 0.86, cinematic_score: 0.84 },
+];
+
+const PHASE_MODELS: Record<string, string> = {
+  script: "gemini-2.5-pro", storyboard: "gemini-2.5-pro",
+  images: "flux-pro-ultra", video: "wan-video-3", audio: "kokoro-tts-v2",
+  music: "musicgen-3", assembly: "ffmpeg",
+};
+
+const PHASE_TIMES: Record<string, number> = {
+  script: 45, storyboard: 60, images: 180, video: 600, audio: 120, music: 240, assembly: 90,
+};
+
+router.get("/projects", async (_req, res) => {
+  const projects = await db.select().from(projectsTable).orderBy(desc(projectsTable.created_at));
+  res.json(projects.map(p => ({
+    ...p,
+    created_at: p.created_at?.toISOString() || new Date().toISOString(),
+    updated_at: p.updated_at?.toISOString() || new Date().toISOString(),
+  })));
+});
+
+router.post("/projects", async (req, res) => {
+  const { title, story_prompt, type, language, duration_seconds } = req.body;
+  const id = randomUUID();
+
+  const [project] = await db.insert(projectsTable).values({
+    id, title,
+    titleAr: language === "ar" || language === "both" ? title : null,
+    type, status: "concept", phase: 1, total_phases: 7,
+    story_prompt, language, duration_seconds: duration_seconds || 60,
+    scenes_count: 0, assets_generated: 0,
+  }).returning();
+
+  const typeNames: Record<string, string> = {
+    short_film: "فيلم قصير", documentary: "وثائقي",
+    commercial: "إعلان", music_video: "فيديو كليب", animation: "رسوم متحركة",
+    short: "فيلم قصير", film: "فيلم", series: "مسلسل",
+  };
+  await db.insert(activityTable).values({
+    id: randomUUID(), type: "project_created",
+    title: `مشروع جديد: ${title}`,
+    description: `النوع: ${typeNames[type] || type} | اللغة: ${language === "ar" ? "عربية" : language === "en" ? "إنجليزية" : "ثنائية"} | المدة: ${duration_seconds}ث`,
+  });
+
+  broadcast("project_updated");
+  broadcast("activity_updated");
+
+  res.status(201).json({
+    ...project,
+    created_at: project.created_at?.toISOString() || new Date().toISOString(),
+    updated_at: project.updated_at?.toISOString() || new Date().toISOString(),
+  });
+});
+
+router.get("/projects/:projectId", async (req, res) => {
+  const { projectId } = req.params;
+  const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, projectId));
+  if (!project) return res.status(404).json({ error: "المشروع غير موجود" });
+  res.json({
+    ...project,
+    created_at: project.created_at?.toISOString() || new Date().toISOString(),
+    updated_at: project.updated_at?.toISOString() || new Date().toISOString(),
+  });
+});
+
+router.get("/projects/:projectId/jobs", async (req, res) => {
+  const { projectId } = req.params;
+  const jobs = await db.select().from(generationJobsTable)
+    .where(eq(generationJobsTable.project_id, projectId))
+    .orderBy(desc(generationJobsTable.started_at));
+  res.json(jobs.map(j => ({
+    ...j,
+    started_at: j.started_at?.toISOString() || new Date().toISOString(),
+    completed_at: j.completed_at?.toISOString() || null,
+  })));
+});
+
+router.get("/jobs/:jobId", async (req, res) => {
+  const { jobId } = req.params;
+  const [job] = await db.select().from(generationJobsTable).where(eq(generationJobsTable.id, jobId));
+  if (!job) return res.status(404).json({ error: "المهمة غير موجودة" });
+  res.json({
+    ...job,
+    started_at: job.started_at?.toISOString() || new Date().toISOString(),
+    completed_at: job.completed_at?.toISOString() || null,
+  });
+});
+
+router.post("/projects/:projectId/generate", async (req, res) => {
+  const { projectId } = req.params;
+  const { phase, type, quality } = req.body;
+
+  const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, projectId));
+  if (!project) return res.status(404).json({ error: "المشروع غير موجود" });
+
+  const TYPE_TO_PHASE: Record<string, string> = {
+    storyboard: "storyboard", image: "images", video: "video",
+    tts: "audio", music: "music", script: "script",
+    audio: "audio", images: "images", assembly: "assembly",
+  };
+
+  const safePhase = (phase || TYPE_TO_PHASE[type] || "script") as string;
+  const jobId = randomUUID();
+  const modelId = PHASE_MODELS[safePhase] || "gemini-2.5-pro";
+  const estimatedSeconds = PHASE_TIMES[safePhase] || 60;
+
+  const phaseOrder = ["script", "storyboard", "images", "video", "audio", "music", "assembly"];
+  const phaseIndex = phaseOrder.indexOf(safePhase) + 1;
+  const statusMap: Record<string, string> = {
+    script: "scripting", storyboard: "storyboard",
+    images: "generating", video: "generating", audio: "generating",
+    music: "generating", assembly: "post-production",
+  };
+
+  const [job] = await db.insert(generationJobsTable).values({
+    id: jobId, project_id: projectId, phase: safePhase,
+    status: "running", model_used: modelId, estimated_seconds: estimatedSeconds,
+  }).returning();
+
+  await db.update(projectsTable).set({
+    status: statusMap[safePhase] || "generating",
+    phase: phaseIndex,
+    assets_generated: project.assets_generated + 1,
+    updated_at: new Date(),
+  }).where(eq(projectsTable.id, projectId));
+
+  const phaseNames: Record<string, string> = {
+    script: "السيناريو", storyboard: "اللوحة المصورة", images: "الصور",
+    video: "الفيديو", audio: "الصوت", music: "الموسيقى", assembly: "التجميع",
+  };
+  await db.insert(activityTable).values({
+    id: randomUUID(), type: "agent_started",
+    title: `بدأ التوليد: ${phaseNames[safePhase] || safePhase}`,
+    description: `المشروع: ${project.titleAr || project.title} | النموذج: ${modelId} | الجودة: ${quality || "عالي"}`,
+  });
+
+  broadcast("project_updated", { projectId, phase: safePhase, status: "running" });
+  broadcast("activity_updated");
+  broadcast("job_started", {
+    jobId,
+    phase: safePhase,
+    projectName: project.titleAr || project.title,
+    projectId,
+  });
+
+  res.json({
+    job_id: jobId, phase: safePhase, status: "running",
+    model_used: modelId, estimated_seconds: estimatedSeconds,
+    output_url: null, started_at: job.started_at?.toISOString() || new Date().toISOString(),
+  });
+
+  setImmediate(async () => {
+    try {
+      let aiResult = "";
+      const title = project.titleAr || project.title;
+      const story = project.story_prompt || "";
+      const lang = project.language || "ar";
+      const dur = project.duration_seconds || 90;
+      const projType = project.type || "short";
+
+      if (safePhase === "script") {
+        const r = await callAIForTask(
+          "text_complex",
+          AGENT_SYSTEM_PROMPTS["story-architect"],
+          `اكتب سيناريو احترافي متكامل بناءً على هذه المعطيات:
+
+عنوان المشروع: ${title}
+فكرة القصة: ${story}
+اللغة: ${lang === "ar" ? "العربية الفصحى" : lang === "en" ? "الإنجليزية" : "ثنائية اللغة"}
+النوع: ${projType}
+المدة المستهدفة: ${dur} ثانية
+
+الرجاء كتابة:
+1. ملخص تنفيذي للقصة (سينوبسيس)
+2. شخصيات القصة مع وصف موجز لكل منها
+3. السيناريو الكامل مع الحوار والمشاهد والتوجيهات
+4. ملاحظات المخرج الأساسية
+
+اكتب بأسلوب أدبي راقٍ وسينمائي متقن.`
+        );
+        aiResult = r.text;
+      } else if (safePhase === "storyboard") {
+        const [boardRes, promptRes] = await Promise.all([
+          callAIForTask(
+            "text_complex",
+            AGENT_SYSTEM_PROMPTS["visual-storyboard"],
+            `صمم لوحة مصورة سينمائية شاملة للمشروع التالي:
+عنوان: ${title}
+القصة: ${story}
+المدة: ${dur} ثانية
+
+لكل مشهد رئيسي (8-12 مشهداً)، قدّم:
+• رقم المشهد وعنوانه
+• زاوية الكاميرا وحركتها
+• الإضاءة والألوان السائدة
+• الشخصيات والأماكن
+• المزاج العاطفي
+• مدة المشهد التقريبية`
+          ),
+          callAIForTask(
+            "text_complex",
+            AGENT_SYSTEM_PROMPTS["ai-prompt-director"],
+            `استناداً إلى مشروع "${title}" بقصة: ${story}
+اكتب برومبت إنجليزية احترافية لـ FLUX.1 Pro لتوليد صور سينمائية لـ 5 مشاهد رئيسية.
+لكل مشهد: اكتب برومبت إنجليزي مفصّل يتضمن: الأسلوب البصري، الإضاءة، زاوية الكاميرا، الألوان، المزاج.`
+          ),
+        ]);
+        aiResult = `═══ اللوحة المصورة ═══\n\n${boardRes.text}\n\n═══ برومبت توليد الصور (FLUX.1) ═══\n\n${promptRes.text}`;
+      } else if (safePhase === "audio") {
+        const r = await callAIForTask(
+          "text_complex",
+          AGENT_SYSTEM_PROMPTS["sound-music"],
+          `صمم المشهد الصوتي الكامل لمشروع "${title}":
+القصة: ${story}
+المدة: ${dur} ثانية
+
+قدّم:
+1. الثيم الصوتي الرئيسي (نوع الصوت، المزاج، الآلات)
+2. توجيهات المؤثرات الصوتية لكل مشهد
+3. تفاصيل التوزيع الموسيقي والإيقاع العام
+
+[TTS_CHARACTERS_ONLY_START]
+اكتب هنا حوار الشخصيات الرئيسية فقط (3-4 جمل قصيرة) كما تنطقها الشخصيات في المشاهد الدرامية، بصوت الشخصيات لا بصوت الراوي:
+[TTS_CHARACTERS_ONLY_END]`
+        );
+        aiResult = r.text;
+
+        // ── توليد الصوت الفعلي عبر Gemini TTS — للشخصيات فقط ──
+        try {
+          const ttsScript = extractTtsScript(aiResult, 550);
+          if (ttsScript && ttsScript.length > 30) {
+            console.log(`[TTS] بدء توليد صوت الشخصيات (${ttsScript.length} حرف)…`);
+            const ttsResult = await callGeminiTTS(ttsScript, "Charon");
+            if (ttsResult?.audioData) {
+              const filename = saveTtsAudio(jobId, ttsResult.audioData, ttsResult.mimeType);
+              await db.update(generationJobsTable).set({ output_url: filename }).where(eq(generationJobsTable.id, jobId));
+              console.log(`[TTS] ✓ صوت الشخصيات محفوظ: ${filename}`);
+            } else {
+              console.warn("[TTS] لم يُعَد صوت من Gemini TTS");
+            }
+          } else {
+            console.warn("[TTS] تخطّي TTS — لا يوجد حوار شخصيات");
+          }
+        } catch (ttsErr: any) {
+          console.warn("[TTS] تحذير: فشل توليد الصوت (غير قاطع):", ttsErr?.message?.slice(0, 100));
+        }
+      } else if (safePhase === "music") {
+        const r = await callAIForTask(
+          "text_complex",
+          AGENT_SYSTEM_PROMPTS["sound-music"],
+          `أعدّ موسيقى تصويرية متكاملة لمشروع "${title}":
+القصة: ${story}
+المدة: ${dur} ثانية
+
+قدّم:
+1. الهوية الموسيقية الكاملة (الأسلوب، الإيقاع، الآلات الرئيسية)
+2. توجيهات MusicGen 3.0 لكل قسم موسيقي
+3. جدول الموسيقى عبر المشاهد (دخول وخروج)
+4. كلمات أغنية الشارة إذا كانت مناسبة`
+        );
+        aiResult = r.text;
+      } else if (safePhase === "assembly") {
+        // ── تحميل كل نتائج المراحل السابقة ──────────────────────────────
+        const allJobs = await db.select().from(generationJobsTable)
+          .where(eq(generationJobsTable.project_id, projectId))
+          .orderBy(desc(generationJobsTable.completed_at));
+
+        const phaseOrder = ["script", "storyboard", "audio", "images", "music", "video"];
+        const jobsByPhase: Record<string, typeof allJobs[0]> = {};
+        for (const j of allJobs) {
+          if (j.status === "completed" && j.phase && !jobsByPhase[j.phase]) {
+            jobsByPhase[j.phase] = j;
+          }
+        }
+
+        const phaseContextParts: string[] = [];
+        for (const ph of phaseOrder) {
+          const j = jobsByPhase[ph];
+          if (j?.result) {
+            const phaseLabel: Record<string, string> = {
+              script: "السيناريو", storyboard: "اللوحة المصورة", audio: "المشهد الصوتي",
+              images: "برومبت الصور", music: "الهوية الموسيقية", video: "برومبت الفيديو",
+            };
+            phaseContextParts.push(
+              `═══ ${phaseLabel[ph] || ph} ═══\n${j.result.slice(0, 1200)}`
+            );
+          }
+        }
+
+        const r = await callAIForTask(
+          "text_complex",
+          AGENT_SYSTEM_PROMPTS["timeline-assembly"],
+          `أنت منسق التجميع النهائي للمشروع السينمائي "${title}".
+لديك مخرجات جميع مراحل الإنتاج كاملة. نسّق وثيقة التجميع الشاملة.
+
+المعطيات:
+- القصة: ${story}
+- المدة: ${dur} ثانية
+- النوع: ${projType}
+
+${phaseContextParts.length > 0 ? `مخرجات المراحل المكتملة:\n\n${phaseContextParts.join("\n\n")}` : "لا توجد مراحل مكتملة بعد"}
+
+قدّم وثيقة التجميع الشاملة التالية:
+1. جدول المونتاج التفصيلي مع توقيت كل مشهد بالثواني
+2. قائمة المشاهد (مشهد 1، مشهد 2...) مع وصف موجز لكل منها
+3. توجيهات دمج الصوت مع المرئي (نقاط البداية والنهاية)
+4. انتقالات المونتاج المقترحة
+5. ملاحظات ما بعد الإنتاج النهائية
+6. قائمة التسليم الكاملة`
+        );
+        aiResult = r.text;
+
+        // ── توليد الفيديو التجميعي بـ ffmpeg ─────────────────────────────
+        try {
+          // إيجاد ملف الصوت من مرحلة الصوت
+          const audioJob = jobsByPhase["audio"];
+          const audioFilename = audioJob?.output_url || undefined;
+
+          // استخراج المشاهد من السيناريو واللوحة المصورة
+          const textsForScenes: Record<string, string> = {};
+          if (jobsByPhase["storyboard"]?.result) textsForScenes.storyboard = jobsByPhase["storyboard"].result;
+          if (jobsByPhase["script"]?.result)     textsForScenes.script     = jobsByPhase["script"].result;
+          textsForScenes.assembly = aiResult;
+
+          const scenes = extractScenes(textsForScenes, dur);
+
+          console.log(`[VIDEO] بدء توليد الفيديو النهائي — ${scenes.length} مشاهد، صوت: ${audioFilename || "لا"}`);
+
+          const videoFilename = await buildCompilationVideo({
+            jobId,
+            projectTitle: title,
+            totalDuration: dur,
+            scenes,
+            audioFilename,
+          });
+
+          await db.update(generationJobsTable).set({ output_url: videoFilename })
+            .where(eq(generationJobsTable.id, jobId));
+
+          console.log(`[VIDEO] ✓ تم توليد الفيديو: ${videoFilename}`);
+        } catch (videoErr: any) {
+          console.warn("[VIDEO] تحذير: فشل توليد الفيديو (غير قاطع):", videoErr?.message?.slice(0, 150));
+        }
+      } else {
+        const r = await callAIForTask(
+          "orchestration",
+          AGENT_SYSTEM_PROMPTS["acis-master"],
+          `أدر مرحلة "${phaseNames[safePhase] || safePhase}" للمشروع "${title}". 
+القصة: ${story}
+قدّم خطة تفصيلية وتقريراً بالتنفيذ المقترح لهذه المرحلة.`
+        );
+        aiResult = r.text;
+      }
+
+      await db.update(generationJobsTable).set({
+        status: "completed",
+        result: aiResult,
+        completed_at: new Date(),
+      }).where(eq(generationJobsTable.id, jobId));
+
+      await db.insert(activityTable).values({
+        id: randomUUID(), type: "agent_completed",
+        title: `اكتمل التوليد: ${phaseNames[safePhase] || safePhase}`,
+        description: `المشروع: ${title} | ${aiResult.length} حرف من المحتوى`,
+      });
+
+      broadcast("job_completed", {
+        jobId,
+        phase: safePhase,
+        projectName: title,
+        projectId,
+        resultLength: aiResult.length,
+      });
+      broadcast("project_updated", { projectId, phase: safePhase, status: "completed" });
+      broadcast("activity_updated");
+
+    } catch (err: any) {
+      console.error(`[إنتاج] خطأ في التوليد لـ ${safePhase}:`, err?.message);
+      await db.update(generationJobsTable).set({
+        status: "failed",
+        result: `خطأ: ${err?.message || "فشل التوليد"}`,
+        completed_at: new Date(),
+      }).where(eq(generationJobsTable.id, jobId));
+
+      broadcast("job_failed", {
+        jobId,
+        phase: safePhase,
+        projectId,
+        error: (err as any)?.message?.slice(0, 200) || "فشل التوليد",
+      });
+      broadcast("activity_updated");
+    }
+  });
+});
+
+router.delete("/projects/:projectId", async (req, res) => {
+  const { projectId } = req.params;
+  const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, projectId));
+  if (!project) return res.status(404).json({ error: "المشروع غير موجود" });
+
+  await db.delete(generationJobsTable).where(eq(generationJobsTable.project_id, projectId));
+  await db.delete(projectsTable).where(eq(projectsTable.id, projectId));
+
+  broadcast("project_updated");
+  res.json({ success: true });
+});
+
+// ── TTS on-demand ──────────────────────────────────────────────────────────
+router.post("/tts", async (req, res) => {
+  const { text } = req.body as { text?: string };
+  if (!text?.trim()) return res.status(400).json({ error: "text مطلوب" });
+
+  const { extractTtsScript, saveTtsAudio } = await import("../lib/media.js");
+  const script = extractTtsScript(text, 550);
+  const ttsResult = await callGeminiTTS(script, "Charon");
+  if (!ttsResult?.audioData) return res.status(502).json({ error: "فشل توليد الصوت من Gemini TTS" });
+
+  const filename = saveTtsAudio(`tts-${randomUUID()}`, ttsResult.audioData, ttsResult.mimeType);
+  res.json({ filename });
+});
+
+router.post("/recover-stuck-jobs", async (_req, res) => {
+  const cutoff = new Date(Date.now() - 10 * 60 * 1000);
+  const stuck = await db.select().from(generationJobsTable)
+    .where(eq(generationJobsTable.status, "running"));
+  const staleJobs = stuck.filter(j => j.started_at && j.started_at < cutoff);
+
+  for (const job of staleJobs) {
+    await db.update(generationJobsTable).set({
+      status: "failed",
+      result: "انتهت مهلة التوليد — أُعيد تشغيل الخادم أثناء التنفيذ",
+      completed_at: new Date(),
+    } as any).where(eq(generationJobsTable.id, job.id));
+  }
+
+  res.json({ recovered: staleJobs.length });
+});
+
+router.get("/archive", async (req, res) => {
+  const { phase, search, limit: limitRaw } = req.query as Record<string, string>;
+  const limitN = Math.min(parseInt(limitRaw || "100", 10), 500);
+
+  let jobs = await db.select({
+    id: generationJobsTable.id,
+    project_id: generationJobsTable.project_id,
+    phase: generationJobsTable.phase,
+    status: generationJobsTable.status,
+    model_used: generationJobsTable.model_used,
+    result: generationJobsTable.result,
+    started_at: generationJobsTable.started_at,
+    completed_at: generationJobsTable.completed_at,
+    estimated_seconds: generationJobsTable.estimated_seconds,
+  }).from(generationJobsTable)
+    .where(eq(generationJobsTable.status, "completed"))
+    .orderBy(desc(generationJobsTable.completed_at))
+    .limit(limitN);
+
+  if (phase) jobs = jobs.filter(j => j.phase === phase);
+  if (search) {
+    const q = search.toLowerCase();
+    jobs = jobs.filter(j => j.result?.toLowerCase().includes(q));
+  }
+
+  const projectIds = [...new Set(jobs.map(j => j.project_id))];
+  const projects = projectIds.length
+    ? await db.select({ id: projectsTable.id, title: projectsTable.title, titleAr: projectsTable.titleAr })
+        .from(projectsTable)
+    : [];
+  const projectMap = Object.fromEntries(projects.map(p => [p.id, p]));
+
+  res.json(jobs.map(j => ({
+    ...j,
+    project_title: projectMap[j.project_id]?.titleAr || projectMap[j.project_id]?.title || "مشروع محذوف",
+    started_at:  j.started_at?.toISOString()  || null,
+    completed_at: j.completed_at?.toISOString() || null,
+  })));
+});
+
+router.get("/models", (_req, res) => {
+  const models = AI_MODELS.map(m => ({
+    ...m,
+    avg_latency_ms: Math.floor(m.avg_latency_ms * (0.9 + Math.random() * 0.2)),
+    status: Math.random() > 0.05 ? m.status : "degraded",
+  }));
+  res.json(models);
+});
+
+export default router;

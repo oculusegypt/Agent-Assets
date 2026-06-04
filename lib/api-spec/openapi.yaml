@@ -1,0 +1,1197 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: ACIS Command Center API — Multi-Agent Orchestration System
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: agents
+    description: Agent management and execution
+  - name: billie
+    description: Billie supervisor agent
+  - name: production
+    description: AI production pipeline (video/image/audio)
+  - name: nexus
+    description: NEXUS Office OS operations
+  - name: conversations
+    description: Agent conversations and chat
+  - name: system
+    description: System metrics and monitoring
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /agents:
+    get:
+      operationId: listAgents
+      tags: [agents]
+      summary: List all agents with live status
+      responses:
+        "200":
+          description: All agents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Agent"
+
+  /agents/{agentId}:
+    get:
+      operationId: getAgent
+      tags: [agents]
+      summary: Get agent details
+      parameters:
+        - name: agentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agent details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+
+  /agents/{agentId}/execute:
+    post:
+      operationId: executeAgent
+      tags: [agents]
+      summary: Execute an agent action
+      parameters:
+        - name: agentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentExecuteInput"
+      responses:
+        "200":
+          description: Execution result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentExecution"
+
+  /agents/{agentId}/executions:
+    get:
+      operationId: listAgentExecutions
+      tags: [agents]
+      summary: List recent executions for an agent
+      parameters:
+        - name: agentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Recent executions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentExecution"
+
+  /billie/status:
+    get:
+      operationId: getBillieStatus
+      tags: [billie]
+      summary: Get Billie supervisor status
+      responses:
+        "200":
+          description: Billie status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillieStatus"
+
+  /billie/news:
+    get:
+      operationId: getBillieNews
+      tags: [billie]
+      summary: Get latest AI and tech news (live)
+      responses:
+        "200":
+          description: Latest news items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NewsItem"
+
+  /billie/alerts:
+    get:
+      operationId: getBillieAlerts
+      tags: [billie]
+      summary: Get active system alerts
+      responses:
+        "200":
+          description: Active alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SystemAlert"
+
+  /billie/analyze:
+    post:
+      operationId: runBillieAnalysis
+      tags: [billie]
+      summary: Run system analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisInput"
+      responses:
+        "200":
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisResult"
+
+  /billie/update-agent:
+    post:
+      operationId: billieUpdateAgent
+      tags: [billie]
+      summary: Billie updates an agent configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentUpdateInput"
+      responses:
+        "200":
+          description: Update result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentUpdateResult"
+
+  /billie/complaints:
+    get:
+      operationId: listComplaints
+      tags: [billie]
+      summary: List user complaints tracked by Billie
+      responses:
+        "200":
+          description: Complaints list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Complaint"
+    post:
+      operationId: submitComplaint
+      tags: [billie]
+      summary: Submit a complaint to Billie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComplaintInput"
+      responses:
+        "201":
+          description: Created complaint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Complaint"
+
+  /production/projects:
+    get:
+      operationId: listProjects
+      tags: [production]
+      summary: List all production projects
+      responses:
+        "200":
+          description: Projects list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      tags: [production]
+      summary: Create a new production project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectInput"
+      responses:
+        "201":
+          description: Created project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /production/projects/{projectId}:
+    get:
+      operationId: getProject
+      tags: [production]
+      summary: Get project details
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /production/projects/{projectId}/generate:
+    post:
+      operationId: generateProduction
+      tags: [production]
+      summary: Start AI generation for a project phase
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerationInput"
+      responses:
+        "200":
+          description: Generation started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationResult"
+
+  /production/models:
+    get:
+      operationId: listModels
+      tags: [production]
+      summary: List available AI models with live status
+      responses:
+        "200":
+          description: Models list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AIModel"
+
+  /conversations:
+    get:
+      operationId: listConversations
+      tags: [conversations]
+      summary: List all agent conversations
+      responses:
+        "200":
+          description: Conversations list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Conversation"
+    post:
+      operationId: createConversation
+      tags: [conversations]
+      summary: Start a new conversation with an agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationInput"
+      responses:
+        "201":
+          description: Created conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversation"
+
+  /conversations/{conversationId}/messages:
+    get:
+      operationId: listMessages
+      tags: [conversations]
+      summary: List messages in a conversation
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Messages list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+    post:
+      operationId: sendMessage
+      tags: [conversations]
+      summary: Send a message to an agent
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageInput"
+      responses:
+        "200":
+          description: Agent response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+
+  /system/metrics:
+    get:
+      operationId: getSystemMetrics
+      tags: [system]
+      summary: Get live system metrics
+      responses:
+        "200":
+          description: System metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemMetrics"
+
+  /system/activity:
+    get:
+      operationId: getSystemActivity
+      tags: [system]
+      summary: Get recent system activity feed
+      responses:
+        "200":
+          description: Activity feed
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityItem"
+
+  /nexus/tasks:
+    get:
+      operationId: listNexusTasks
+      tags: [nexus]
+      summary: List NEXUS Office OS tasks
+      responses:
+        "200":
+          description: Tasks list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NexusTask"
+    post:
+      operationId: createNexusTask
+      tags: [nexus]
+      summary: Create a new NEXUS task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NexusTaskInput"
+      responses:
+        "201":
+          description: Created task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NexusTask"
+
+  /nexus/summary:
+    get:
+      operationId: getNexusSummary
+      tags: [nexus]
+      summary: Get NEXUS dashboard summary
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NexusSummary"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    Agent:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        nameAr:
+          type: string
+        system:
+          type: string
+        description:
+          type: string
+        descriptionAr:
+          type: string
+        status:
+          type: string
+          enum: [online, offline, busy, error]
+        model:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        subagents:
+          type: array
+          items:
+            type: string
+        executions_today:
+          type: integer
+        success_rate:
+          type: number
+        avg_response_ms:
+          type: integer
+        last_active:
+          type: ["string", "null"]
+        icon:
+          type: string
+        color:
+          type: string
+      required:
+        - id
+        - name
+        - system
+        - description
+        - status
+        - model
+        - capabilities
+        - subagents
+        - executions_today
+        - success_rate
+        - avg_response_ms
+        - icon
+        - color
+
+    AgentExecuteInput:
+      type: object
+      properties:
+        action:
+          type: string
+        prompt:
+          type: string
+        parameters:
+          type: object
+      required:
+        - action
+        - prompt
+
+    AgentExecution:
+      type: object
+      properties:
+        id:
+          type: string
+        agentId:
+          type: string
+        action:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        result:
+          type: ["string", "null"]
+        error:
+          type: ["string", "null"]
+        duration_ms:
+          type: ["integer", "null"]
+        created_at:
+          type: string
+        completed_at:
+          type: ["string", "null"]
+        tokens_used:
+          type: ["integer", "null"]
+        model_used:
+          type: ["string", "null"]
+      required:
+        - id
+        - agentId
+        - action
+        - status
+        - created_at
+
+    BillieStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [active, analyzing, idle]
+        agents_monitored:
+          type: integer
+        alerts_active:
+          type: integer
+        issues_resolved_today:
+          type: integer
+        system_health_score:
+          type: number
+        last_analysis:
+          type: string
+        uptime_hours:
+          type: number
+        news_last_updated:
+          type: string
+        current_focus:
+          type: string
+        recommendations:
+          type: array
+          items:
+            type: string
+      required:
+        - status
+        - agents_monitored
+        - alerts_active
+        - issues_resolved_today
+        - system_health_score
+        - last_analysis
+        - uptime_hours
+        - news_last_updated
+        - current_focus
+        - recommendations
+
+    NewsItem:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        titleAr:
+          type: ["string", "null"]
+        summary:
+          type: string
+        source:
+          type: string
+        url:
+          type: string
+        category:
+          type: string
+          enum: [ai, technology, research, tools, video, audio, language-models]
+        published_at:
+          type: string
+        relevance_score:
+          type: number
+        tags:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - title
+        - summary
+        - source
+        - url
+        - category
+        - published_at
+        - relevance_score
+        - tags
+
+    SystemAlert:
+      type: object
+      properties:
+        id:
+          type: string
+        severity:
+          type: string
+          enum: [info, warning, error, critical]
+        agent_id:
+          type: ["string", "null"]
+        title:
+          type: string
+        message:
+          type: string
+        resolved:
+          type: boolean
+        created_at:
+          type: string
+        resolved_at:
+          type: ["string", "null"]
+      required:
+        - id
+        - severity
+        - title
+        - message
+        - resolved
+        - created_at
+
+    AnalysisInput:
+      type: object
+      properties:
+        scope:
+          type: string
+          enum: [full, agents, performance, security, ux]
+        target_agent_id:
+          type: ["string", "null"]
+      required:
+        - scope
+
+    AnalysisResult:
+      type: object
+      properties:
+        id:
+          type: string
+        scope:
+          type: string
+        health_score:
+          type: number
+        findings:
+          type: array
+          items:
+            type: object
+        recommendations:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+      required:
+        - id
+        - scope
+        - health_score
+        - findings
+        - recommendations
+        - created_at
+
+    AgentUpdateInput:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        update_type:
+          type: string
+          enum: [config, prompt, capabilities, model, status]
+        changes:
+          type: object
+        reason:
+          type: string
+      required:
+        - agent_id
+        - update_type
+        - changes
+        - reason
+
+    AgentUpdateResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        agent_id:
+          type: string
+        update_type:
+          type: string
+        message:
+          type: string
+        applied_at:
+          type: string
+      required:
+        - success
+        - agent_id
+        - update_type
+        - message
+        - applied_at
+
+    Complaint:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        agent_id:
+          type: ["string", "null"]
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+        status:
+          type: string
+          enum: [open, investigating, resolved, wont-fix]
+        billie_response:
+          type: ["string", "null"]
+        created_at:
+          type: string
+        resolved_at:
+          type: ["string", "null"]
+      required:
+        - id
+        - title
+        - description
+        - severity
+        - status
+        - created_at
+
+    ComplaintInput:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        agent_id:
+          type: ["string", "null"]
+        severity:
+          type: string
+          enum: [low, medium, high, critical]
+      required:
+        - title
+        - description
+        - severity
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        titleAr:
+          type: ["string", "null"]
+        type:
+          type: string
+          enum: [film, short, documentary, animation, commercial]
+        status:
+          type: string
+          enum: [concept, scripting, storyboard, generating, post-production, complete]
+        phase:
+          type: integer
+        total_phases:
+          type: integer
+        story_prompt:
+          type: string
+        language:
+          type: string
+          enum: [ar, en, both]
+        duration_seconds:
+          type: integer
+        scenes_count:
+          type: integer
+        assets_generated:
+          type: integer
+        created_at:
+          type: string
+        updated_at:
+          type: string
+      required:
+        - id
+        - title
+        - type
+        - status
+        - phase
+        - total_phases
+        - story_prompt
+        - language
+        - duration_seconds
+        - scenes_count
+        - assets_generated
+        - created_at
+        - updated_at
+
+    ProjectInput:
+      type: object
+      properties:
+        title:
+          type: string
+        story_prompt:
+          type: string
+        type:
+          type: string
+          enum: [film, short, documentary, animation, commercial]
+        language:
+          type: string
+          enum: [ar, en, both]
+        duration_seconds:
+          type: integer
+      required:
+        - title
+        - story_prompt
+        - type
+        - language
+        - duration_seconds
+
+    GenerationInput:
+      type: object
+      properties:
+        phase:
+          type: string
+          enum: [script, storyboard, images, video, audio, music, assembly]
+        model_preference:
+          type: ["string", "null"]
+        quality:
+          type: string
+          enum: [draft, production, cinematic]
+      required:
+        - phase
+        - quality
+
+    GenerationResult:
+      type: object
+      properties:
+        job_id:
+          type: string
+        phase:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        model_used:
+          type: string
+        estimated_seconds:
+          type: integer
+        output_url:
+          type: ["string", "null"]
+        started_at:
+          type: string
+      required:
+        - job_id
+        - phase
+        - status
+        - model_used
+        - estimated_seconds
+        - started_at
+
+    AIModel:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        provider:
+          type: string
+        type:
+          type: string
+          enum: [language, video, image, audio, music, tts]
+        status:
+          type: string
+          enum: [online, offline, degraded]
+        arabic_support:
+          type: boolean
+        free_tier:
+          type: boolean
+        cost_per_request:
+          type: number
+        avg_latency_ms:
+          type: integer
+        quality_score:
+          type: number
+        cinematic_score:
+          type: number
+      required:
+        - id
+        - name
+        - provider
+        - type
+        - status
+        - arabic_support
+        - free_tier
+        - cost_per_request
+        - avg_latency_ms
+        - quality_score
+        - cinematic_score
+
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+        agent_id:
+          type: string
+        agent_name:
+          type: string
+        title:
+          type: string
+        message_count:
+          type: integer
+        last_message_at:
+          type: ["string", "null"]
+        created_at:
+          type: string
+      required:
+        - id
+        - agent_id
+        - agent_name
+        - title
+        - message_count
+        - created_at
+
+    ConversationInput:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        title:
+          type: string
+        initial_message:
+          type: ["string", "null"]
+      required:
+        - agent_id
+        - title
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+        conversation_id:
+          type: string
+        role:
+          type: string
+          enum: [user, assistant, system]
+        content:
+          type: string
+        model_used:
+          type: ["string", "null"]
+        tokens_used:
+          type: ["integer", "null"]
+        created_at:
+          type: string
+      required:
+        - id
+        - conversation_id
+        - role
+        - content
+        - created_at
+
+    MessageInput:
+      type: object
+      properties:
+        content:
+          type: string
+        language:
+          type: string
+          enum: [ar, en]
+      required:
+        - content
+        - language
+
+    SystemMetrics:
+      type: object
+      properties:
+        total_agents:
+          type: integer
+        agents_online:
+          type: integer
+        agents_busy:
+          type: integer
+        agents_offline:
+          type: integer
+        total_executions_today:
+          type: integer
+        total_executions_all_time:
+          type: integer
+        success_rate:
+          type: number
+        avg_response_ms:
+          type: integer
+        active_projects:
+          type: integer
+        total_projects:
+          type: integer
+        tokens_used_today:
+          type: integer
+        system_health:
+          type: number
+        uptime_hours:
+          type: number
+      required:
+        - total_agents
+        - agents_online
+        - agents_busy
+        - agents_offline
+        - total_executions_today
+        - total_executions_all_time
+        - success_rate
+        - avg_response_ms
+        - active_projects
+        - total_projects
+        - tokens_used_today
+        - system_health
+        - uptime_hours
+
+    ActivityItem:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [agent_started, agent_completed, agent_error, project_created, project_completed, billie_alert, system_update]
+        agent_id:
+          type: ["string", "null"]
+        agent_name:
+          type: ["string", "null"]
+        title:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: string
+      required:
+        - id
+        - type
+        - title
+        - description
+        - created_at
+
+    NexusTask:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+          enum: [document, email, calendar, meeting, spreadsheet, presentation, research, crm, workflow, knowledge]
+        assigned_agent:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, completed, failed, waiting-approval]
+        priority:
+          type: string
+          enum: [low, medium, high, urgent]
+        risk_score:
+          type: integer
+        progress:
+          type: integer
+        result:
+          type: ["string", "null"]
+        created_at:
+          type: string
+        completed_at:
+          type: ["string", "null"]
+      required:
+        - id
+        - title
+        - type
+        - assigned_agent
+        - status
+        - priority
+        - risk_score
+        - progress
+        - created_at
+
+    NexusTaskInput:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+          enum: [document, email, calendar, meeting, spreadsheet, presentation, research, crm, workflow, knowledge]
+        priority:
+          type: string
+          enum: [low, medium, high, urgent]
+      required:
+        - title
+        - description
+        - type
+        - priority
+
+    NexusSummary:
+      type: object
+      properties:
+        tasks_total:
+          type: integer
+        tasks_completed:
+          type: integer
+        tasks_running:
+          type: integer
+        tasks_pending:
+          type: integer
+        tasks_failed:
+          type: integer
+        avg_completion_time_min:
+          type: number
+        sub_agents_active:
+          type: integer
+        documents_processed:
+          type: integer
+        emails_handled:
+          type: integer
+        meetings_managed:
+          type: integer
+      required:
+        - tasks_total
+        - tasks_completed
+        - tasks_running
+        - tasks_pending
+        - tasks_failed
+        - avg_completion_time_min
+        - sub_agents_active
+        - documents_processed
+        - emails_handled
+        - meetings_managed

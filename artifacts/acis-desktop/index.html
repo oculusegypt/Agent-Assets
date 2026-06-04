@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <title>مركز قيادة ACIS</title>
+    <meta name="description" content="مركز قيادة ACIS — نظام الذكاء الاصطناعي السينمائي المتكامل" />
+    <meta name="robots" content="index, follow" />
+    <meta property="og:title" content="مركز قيادة ACIS" />
+    <meta property="og:description" content="مركز قيادة ACIS — نظام الذكاء الاصطناعي السينمائي المتكامل" />
+    <meta property="og:type" content="website" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+      html, body { background: #0a0a0f; color: #e2e8f0; margin: 0; padding: 0; }
+      #root { min-height: 100vh; }
+      #acis-splash {
+        position: fixed; inset: 0; background: #0a0a0f;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        z-index: 9999; gap: 20px; transition: opacity 0.3s ease;
+      }
+      #acis-splash.hidden { opacity: 0; pointer-events: none; }
+      .splash-icon {
+        width: 56px; height: 56px; border-radius: 14px;
+        background: rgba(0, 220, 255, 0.15); border: 1px solid rgba(0, 220, 255, 0.3);
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 0 30px rgba(0, 220, 255, 0.15);
+        animation: pulse-glow 2s infinite;
+      }
+      .splash-icon svg { width: 28px; height: 28px; color: rgb(0, 220, 255); }
+      .splash-title { font-family: 'Tajawal', sans-serif; font-size: 22px; font-weight: 700; color: #e2e8f0; letter-spacing: 0.15em; }
+      .splash-sub { font-size: 11px; color: rgba(0, 220, 255, 0.6); font-family: monospace; letter-spacing: 0.2em; margin-top: -12px; }
+      .splash-bar { width: 180px; height: 2px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
+      .splash-bar-inner { height: 100%; background: linear-gradient(90deg, transparent, rgb(0,220,255), transparent); animation: bar-slide 1.2s infinite; }
+      @keyframes pulse-glow { 0%,100%{box-shadow:0 0 20px rgba(0,220,255,.1)} 50%{box-shadow:0 0 40px rgba(0,220,255,.25)} }
+      @keyframes bar-slide { 0%{transform:translateX(-100%)} 100%{transform:translateX(200%)} }
+    </style>
+  </head>
+  <body>
+    <div id="acis-splash">
+      <div class="splash-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
+          <path d="M8 12h8M12 8l4 4-4 4"/>
+        </svg>
+      </div>
+      <div class="splash-title">ACIS</div>
+      <div class="splash-sub">مركز القيادة · جارٍ التحميل</div>
+      <div class="splash-bar"><div class="splash-bar-inner"></div></div>
+    </div>
+    <div id="root"></div>
+    <script>
+      window.__ACIS_READY__ = function() {
+        var splash = document.getElementById('acis-splash');
+        if (splash) { splash.classList.add('hidden'); setTimeout(function(){ splash.remove(); }, 350); }
+      };
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

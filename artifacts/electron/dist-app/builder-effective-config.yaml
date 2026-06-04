@@ -1,0 +1,48 @@
+directories:
+  output: dist-app
+  buildResources: build-resources
+appId: com.acis.cinematic-ai
+productName: ACIS — مركز القيادة السينمائي
+copyright: Copyright © 2026 ACIS
+files:
+  - filter:
+      - dist-electron/**/*
+      - dist-frontend/**/*
+      - dist-backend/**/*
+      - node_modules/**/*
+      - '!node_modules/.cache'
+extraResources:
+  - from: ../../data
+    to: data
+    filter:
+      - '**/*'
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: build-resources/icon.ico
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  icon: build-resources/icon.png
+  category: Multimedia
+  maintainer: ACIS Team <acis@example.com>
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerLanguages:
+    - ar
+    - en
+  language: ar
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ACIS
+nodeGypRebuild: false
+npmRebuild: false
+electronVersion: 34.5.8

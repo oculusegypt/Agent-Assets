@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "pLRipff3Q_wqvjUcqeOeC"
+uri = "file://artifacts/electron/dist-app/ACIS-v3.0-Linux.tar.gz"
+type = "unspecified"
+title = "ACIS v3.0 — Linux AppImage (tar.gz, 106 MB)"
